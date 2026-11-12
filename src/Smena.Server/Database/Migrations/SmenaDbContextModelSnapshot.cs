@@ -1345,6 +1345,10 @@ namespace Smena.Server.Database.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_stale");
 
+                    b.Property<bool>("PastedAtCashier")
+                        .HasColumnType("boolean")
+                        .HasColumnName("pasted_at_cashier");
+
                     b.Property<string>("Path")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -1391,6 +1395,8 @@ namespace Smena.Server.Database.Migrations
 
                     b.ToTable("photos", null, t =>
                         {
+                            t.HasCheckConstraint("ck_photos_pasted_not_stale", "NOT (pasted_at_cashier AND is_stale)");
+
                             t.HasCheckConstraint("ck_photos_sha256", "octet_length(sha256) = 32");
 
                             t.HasCheckConstraint("ck_photos_size", "bytes > 0 AND width > 0 AND height > 0");

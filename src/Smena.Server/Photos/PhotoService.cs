@@ -86,9 +86,21 @@ public sealed class PhotoService(SmenaDbContext db, PhotoStorage storage, PhotoP
             ? db.Photos.CountAsync(photo => photo.SessionId == id && photo.ShiftId == null, cancellationToken)
             : Task.FromResult(0);
 
-    public async Task<PhotoUploadResult> UploadAsync(string token, MemoryStream original, CancellationToken cancellationToken)
+    /// <summary>Снимок с телефона: сессия определяется секретом из ссылки в QR.</summary>
+    public async Task<PhotoUploadResult> UploadAsync(string token, MemoryStream original, CancellationToken cancellationToken) =>
+        await UploadAsync(await FindOpenAsync(token, cancellationToken), original, pastedAtCashier: false, cancellationToken);
+
+    /// <summary>Снимок экрана, вставленный на кассе из буфера обмена.</summary>
+    public async Task<PhotoUploadResult> PasteAsync(Guid sessionId, MemoryStream original, CancellationToken cancellationToken) =>
+        await UploadAsync(await FindOpenAsync(sessionId, cancellationToken), original, pastedAtCashier: true, cancellationToken);
+
+    private async Task<PhotoUploadResult> UploadAsync(
+        PhotoSession? session,
+        MemoryStream original,
+        bool pastedAtCashier,
+        CancellationToken cancellationToken)
     {
-        if (await FindOpenAsync(token, cancellationToken) is not { } session)
+        if (session is null)
         {
             return new PhotoUploadResult(PhotoUploadStatus.SessionGone);
         }
@@ -138,8 +150,10 @@ public sealed class PhotoService(SmenaDbContext db, PhotoStorage storage, PhotoP
                 processed.Width,
                 processed.Height,
                 processed.TakenAt,
-                PhotoRules.IsStale(processed.TakenAt, now, settings.PhotoMaxAgeHours),
-                now);
+                // У снимка экрана времени съёмки нет по природе — это не признак подлога.
+                isStale: !pastedAtCashier && PhotoRules.IsStale(processed.TakenAt, now, settings.PhotoMaxAgeHours),
+                now,
+                pastedAtCashier);
 
             db.Photos.Add(photo);
             await db.SaveChangesAsync(cancellationToken);
@@ -161,9 +175,16 @@ public sealed class PhotoService(SmenaDbContext db, PhotoStorage storage, PhotoP
     }
 
     /// <summary>Убирает один снимок из открытой сессии: администратор снял не то.</summary>
-    public async Task<bool> RemoveAsync(string token, Guid photoId, CancellationToken cancellationToken)
+    public async Task<bool> RemoveAsync(string token, Guid photoId, CancellationToken cancellationToken) =>
+        await RemoveAsync(await FindOpenAsync(token, cancellationToken), photoId, cancellationToken);
+
+    /// <summary>То же с кассы: сессия известна по идентификатору.</summary>
+    public async Task<bool> RemoveAsync(Guid sessionId, Guid photoId, CancellationToken cancellationToken) =>
+        await RemoveAsync(await FindOpenAsync(sessionId, cancellationToken), photoId, cancellationToken);
+
+    private async Task<bool> RemoveAsync(PhotoSession? session, Guid photoId, CancellationToken cancellationToken)
     {
-        if (await FindOpenAsync(token, cancellationToken) is not { } session)
+        if (session is null)
         {
             return false;
         }

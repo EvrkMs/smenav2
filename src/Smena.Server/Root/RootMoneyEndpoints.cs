@@ -165,7 +165,7 @@ internal static class RootMoneyEndpoints
             .AsNoTracking()
             .Where(photo => photo.ShiftId == shift.Id)
             .OrderBy(static photo => photo.Id)
-            .Select(static photo => new PhotoResponse(photo.Id, photo.TakenAt, photo.IsStale, photo.UploadedAt))
+            .Select(static photo => new PhotoResponse(photo.Id, photo.TakenAt, photo.IsStale, photo.UploadedAt, photo.PastedAtCashier))
             .ToListAsync(cancellationToken);
 
         return new ShiftDetail(

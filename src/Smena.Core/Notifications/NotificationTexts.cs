@@ -19,12 +19,14 @@ public static class NotificationTexts
     /// <param name="closedAtLocal">Момент закрытия во времени клуба.</param>
     /// <param name="photoCount">Сколько фото приложено к смене.</param>
     /// <param name="stalePhotoCount">Сколько из них сомнительных: старый снимок или нет времени съёмки.</param>
+    /// <param name="pastedPhotoCount">Сколько из них вставлено на кассе из буфера обмена.</param>
     public static string ShiftReport(
         ShiftInput input,
         ShiftCalculation calculation,
         DateTimeOffset closedAtLocal,
         int photoCount = 0,
-        int stalePhotoCount = 0)
+        int stalePhotoCount = 0,
+        int pastedPhotoCount = 0)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(calculation);
@@ -78,6 +80,14 @@ public static class NotificationTexts
         {
             text.AppendLine();
             text.Append("Фото: ").Append(photoCount);
+
+            // Снимки экрана, вставленные на кассе: времени съёмки у них нет, поэтому
+            // они считаются отдельно, а не попадают в «сомнительные».
+            if (pastedPhotoCount > 0)
+            {
+                text.Append(" (с кассы: ").Append(pastedPhotoCount).Append(')');
+            }
+
             if (stalePhotoCount > 0)
             {
                 text.Append(". ⚠ Сомнительных: ").Append(stalePhotoCount).Append(" (старый снимок или нет времени съёмки)");

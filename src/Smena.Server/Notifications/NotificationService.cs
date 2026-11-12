@@ -40,12 +40,14 @@ public sealed class NotificationService(SmenaDbContext db, Ledger ledger, TimePr
             var closedAtLocal = TimeZoneInfo.ConvertTime(operation.OccurredAt, settings.GetTimeZone());
 
             var stale = 0;
+            var pasted = 0;
             foreach (var photo in photos)
             {
                 stale += photo.IsStale ? 1 : 0;
+                pasted += photo.PastedAtCashier ? 1 : 0;
             }
 
-            Add(reports, NotificationTexts.ShiftReport(input, calculation, closedAtLocal, photos.Count, stale), operation);
+            Add(reports, NotificationTexts.ShiftReport(input, calculation, closedAtLocal, photos.Count, stale, pasted), operation);
 
             // Альбом идёт следом за текстом отчёта. В сообщении только ссылка на смену:
             // какие файлы слать, отправитель узнаёт из базы в момент отправки.

@@ -194,7 +194,9 @@ docs/
 ### Фото
 
 **photo_sessions**: id, token (уникален), created_at, closed_at?.
-**photos**: id, session_id, shift_id?, sha256 (уникален), path, bytes, width, height, taken_at?, is_stale, uploaded_at.
+**photos**: id, session_id, shift_id?, sha256 (уникален), path, bytes, width, height, taken_at?, is_stale, uploaded_at, pasted_at_cashier.
+
+Снимок попадает в сессию с телефона (секрет из QR) или с кассы — вставкой снимка экрана из буфера обмена (`pasted_at_cashier`). Правила приёма общие; отличие одно: у вставленного снимка нет времени съёмки, поэтому давность для него не оценивается (база не даст пометить его `is_stale`), а в отчёте и панели он показан отдельно.
 **outbox_messages.photos_shift_id** — если задан, сообщение — альбом с фото этой смены, а текст — подпись к нему.
 
 Фото расходов (чек к расходу из сейфа) пока нет; когда появятся, у сессии добавится назначение, у фото — ссылка на транзакцию.

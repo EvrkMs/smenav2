@@ -149,7 +149,9 @@
       image.loading = 'lazy';
 
       const caption = document.createElement('figcaption');
-      if (photo.isStale) {
+      if (photo.pastedAtCashier) {
+        caption.textContent = 'Вставлено с кассы';
+      } else if (photo.isStale) {
         caption.className = 'stale';
         caption.textContent = photo.takenAt ? 'Старый снимок — будет отмечен в отчёте' : 'Нет времени съёмки — будет отмечен в отчёте';
       } else {

@@ -9,6 +9,7 @@ import { formatMoney, parseIntSafe } from '../lib/format';
 import { usePersistedState } from '../lib/hooks';
 import { usePhotoSession } from '../lib/photoSession';
 import PhotoPanel from '../components/PhotoPanel';
+import PastePhotoDialog from '../components/PastePhotoDialog';
 
 interface Row {
   employeeId: string;
@@ -106,6 +107,15 @@ export default function Raport() {
     setPhotoBusy(true);
     await call(photos.start());
     setPhotoBusy(false);
+  };
+
+  // Окно вставки открывается на конкретную сессию: если её ещё нет, сначала создаём.
+  const [pasteSessionId, setPasteSessionId] = useState<string | null>(null);
+  const handlePhotoPaste = async () => {
+    setPhotoBusy(true);
+    const id = await call(photos.ensure());
+    setPhotoBusy(false);
+    if (id) setPasteSessionId(id);
   };
 
   const handlePhotoCancel = async () => {
@@ -272,8 +282,18 @@ export default function Raport() {
           session={photos.session}
           busy={photoBusy || busy}
           onStart={handlePhotoStart}
+          onPaste={handlePhotoPaste}
           onCancel={handlePhotoCancel}
         />
+        {pasteSessionId !== null && pasteSessionId === photos.sessionId && (
+          <PastePhotoDialog
+            sessionId={pasteSessionId}
+            count={photoCount}
+            minPhotos={photos.session?.minPhotos ?? config.minPhotos}
+            onChanged={() => void photos.reload()}
+            onClose={() => setPasteSessionId(null)}
+          />
+        )}
       </div>
 
       <Panel title="Касса">

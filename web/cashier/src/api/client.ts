@@ -146,6 +146,8 @@ export interface Photo {
   /** Старый снимок или без времени съёмки: принят, но будет отмечен в отчёте. */
   isStale: boolean;
   uploadedAt: string;
+  /** Снимок экрана, вставленный на кассе из буфера обмена. */
+  pastedAtCashier: boolean;
 }
 
 export interface PhotoSession {
@@ -238,6 +240,38 @@ export async function getPhotoSession(id: string): Promise<PhotoSession | null> 
 /** «Сбросить фото»: сессия и загруженные в неё снимки удаляются. */
 export async function cancelPhotoSession(id: string): Promise<void> {
   await request('DELETE', `/photo-sessions/${id}`);
+}
+
+/**
+ * Снимок экрана с кассы в сессию фото. Тело запроса — сам файл, как и при
+ * загрузке с телефона. Отказ (не картинка, повтор, сессия закрыта) приходит
+ * исключением с текстом для администратора.
+ */
+export async function pastePhoto(sessionId: string, image: Blob): Promise<Photo> {
+  const headers: Record<string, string> = {};
+  const token = getDeviceToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(`/api/photo-sessions/${sessionId}/photos`, { method: 'POST', headers, body: image });
+  } catch {
+    throw new ApiError('network', 'Нет связи с сервером.');
+  }
+
+  if (response.ok) return (await response.json()) as Photo;
+  if (response.status === 401) throw new ApiError('unauthorized', 'Сервер не принял токен устройства.');
+
+  const message = await response
+    .json()
+    .then((data: { message?: string }) => data.message)
+    .catch(() => undefined);
+  throw new ApiError(response.status >= 500 ? 'server' : 'rejected', message ?? `Ошибка сервера (${response.status}).`);
+}
+
+/** Убирает снимок из ещё не отправленной сессии. */
+export async function removePhoto(sessionId: string, photoId: string): Promise<void> {
+  await request('DELETE', `/photo-sessions/${sessionId}/photos/${photoId}`);
 }
 
 export interface StockItem {

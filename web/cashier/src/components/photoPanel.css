@@ -13,3 +13,59 @@
 .photo-status p { margin: 0; }
 .photo-count { font-size: 26px; font-weight: 700; line-height: 1.1; }
 .photo-stale { font-size: 13px; color: var(--brick); }
+.photo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---- Окно «Вставить фото» ---- */
+
+.paste-dialog { width: min(520px, calc(100vw - 32px)); }
+.paste-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  text-align: center;
+  padding: 26px 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.paste-zone strong { font-size: 18px; color: var(--text); font-weight: 600; }
+.paste-zone.busy { opacity: 0.7; }
+.paste-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.confirm-slip p.paste-error { margin: 12px 0 0; color: var(--brick); }
+
+.paste-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; margin-top: 14px; }
+.paste-list figure { position: relative; margin: 0; }
+.paste-list img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+}
+.paste-list figure button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.paste-footer { align-items: center; justify-content: space-between; margin-top: 18px; }

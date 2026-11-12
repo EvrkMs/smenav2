@@ -88,6 +88,13 @@ public sealed class Photo
 
     public DateTimeOffset UploadedAt { get; private set; }
 
+    /// <summary>
+    /// Снимок вставлен на кассе из буфера обмена (снимок экрана), а не снят телефоном.
+    /// Времени съёмки у такого файла нет и быть не может, поэтому давность для него
+    /// не оценивается (<see cref="IsStale"/> всегда false), а в отчёте он считается отдельно.
+    /// </summary>
+    public bool PastedAtCashier { get; private set; }
+
     internal static Photo Create(
         Guid id,
         Guid sessionId,
@@ -98,7 +105,8 @@ public sealed class Photo
         int height,
         DateTimeOffset? takenAt,
         bool isStale,
-        DateTimeOffset uploadedAt) => new()
+        DateTimeOffset uploadedAt,
+        bool pastedAtCashier) => new()
     {
         Id = id,
         SessionId = sessionId,
@@ -110,6 +118,7 @@ public sealed class Photo
         TakenAt = takenAt?.ToUniversalTime(),
         IsStale = isStale,
         UploadedAt = uploadedAt.ToUniversalTime(),
+        PastedAtCashier = pastedAtCashier,
     };
 
     internal void AttachTo(Guid shiftId) => ShiftId = shiftId;
@@ -136,6 +145,7 @@ internal sealed class PhotoConfiguration : IEntityTypeConfiguration<Photo>
         {
             table.HasCheckConstraint("ck_photos_sha256", $"octet_length(sha256) = {Photo.HashLength}");
             table.HasCheckConstraint("ck_photos_size", "bytes > 0 AND width > 0 AND height > 0");
+            table.HasCheckConstraint("ck_photos_pasted_not_stale", "NOT (pasted_at_cashier AND is_stale)");
         });
 
         builder.HasKey(static photo => photo.Id);

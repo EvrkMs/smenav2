@@ -133,7 +133,7 @@ export interface OperationDetail {
     shortageReason: string | null;
     employees: { name: string; hours: number; hourlyRate: number; minus: number }[];
     /** isStale — старый снимок или без времени съёмки. Файл: /api/root/photos/{id}. */
-    photos: { id: string; takenAt: string | null; isStale: boolean; uploadedAt: string }[];
+    photos: { id: string; takenAt: string | null; isStale: boolean; uploadedAt: string; pastedAtCashier: boolean }[];
   } | null;
 }
 

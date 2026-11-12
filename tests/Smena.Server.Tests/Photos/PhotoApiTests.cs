@@ -618,7 +618,132 @@ public sealed class PhotoApiTests(SmenaApp app) : IAsyncLifetime
         Assert.Empty(app.Telegram.SentPhotos);
     }
 
+    // ---- Вставка с кассы ----
+
+    [Fact]
+    public async Task Screenshot_pasted_at_the_cashier_is_accepted_without_a_time_check()
+    {
+        using var cashier = app.CreateCashierClient();
+        var session = await CreateSessionAsync(cashier);
+
+        using var response = await PasteAsync(cashier, session, Picture(format: MagickFormat.Png));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var pasted = await ReadAsync<PhotoResponse>(response);
+        Assert.True(pasted.PastedAtCashier);
+        Assert.False(pasted.IsStale);     // времени съёмки у снимка экрана нет — и это не повод для отметки
+        Assert.Null(pasted.TakenAt);
+
+        // Телефон видит и вставленные снимки; снятые им самим отмечаются по-прежнему.
+        var fromPhone = await ReadAsync<PhotoResponse>(await UploadAsync(cashier, session, Picture()));
+        Assert.False(fromPhone.PastedAtCashier);
+        Assert.True(fromPhone.IsStale);
+
+        var status = await GetAsync<UploadStatusResponse>(cashier, $"/api/upload/{Token(session)}");
+        Assert.Equal([true, false], status.Photos.Select(p => p.PastedAtCashier));
+    }
+
+    [Fact]
+    public async Task Pasting_requires_the_cashier_token()
+    {
+        using var cashier = app.CreateCashierClient();
+        using var anonymous = app.CreateClient();
+        using var root = await app.CreateRootClientAsync();
+        var session = await CreateSessionAsync(cashier);
+
+        // Секрет из QR даёт право только на загрузку «как с телефона».
+        Assert.Equal(HttpStatusCode.Unauthorized, (await PasteAsync(anonymous, session, Picture())).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await PasteAsync(root, session, Picture())).StatusCode);
+        Assert.Equal(0, await CountPhotosAsync());
+    }
+
+    [Fact]
+    public async Task Pasted_screenshots_follow_the_same_rules_as_phone_photos()
+    {
+        using var cashier = app.CreateCashierClient();
+        var session = await CreateSessionAsync(cashier);
+        var picture = Picture();
+
+        (await PasteAsync(cashier, session, picture)).EnsureSuccessStatusCode();
+
+        // Повтор — и вставкой, и с телефона; не картинка; несуществующая сессия.
+        Assert.Equal(HttpStatusCode.Conflict, (await PasteAsync(cashier, session, picture)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await UploadAsync(cashier, session, picture)).StatusCode);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await PasteAsync(cashier, session, "текст"u8.ToArray())).StatusCode);
+        using var gone = await cashier.PostAsync(
+            Relative($"/api/photo-sessions/{Guid.CreateVersion7()}/photos"), new ByteArrayContent(Picture()), Ct);
+        Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+        Assert.Contains("Вставить фото", (await ReadAsync<ErrorResponse>(gone)).Message, StringComparison.Ordinal);
+
+        Assert.Equal(1, await CountPhotosAsync());
+        Assert.Single(StoredFiles());
+    }
+
+    [Fact]
+    public async Task Pasted_screenshot_can_be_removed_at_the_cashier()
+    {
+        using var cashier = app.CreateCashierClient();
+        var session = await CreateSessionAsync(cashier);
+        var pasted = await ReadAsync<PhotoResponse>(await PasteAsync(cashier, session, Picture()));
+
+        using var removed = await cashier.DeleteAsync(Relative($"/api/photo-sessions/{session.Id}/photos/{pasted.Id}"), Ct);
+        using var again = await cashier.DeleteAsync(Relative($"/api/photo-sessions/{session.Id}/photos/{pasted.Id}"), Ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, removed.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, again.StatusCode);
+        Assert.Equal(0, await CountPhotosAsync());
+        Assert.Empty(StoredFiles());
+    }
+
+    [Fact]
+    public async Task Shift_can_be_closed_with_pasted_screenshots_and_the_report_counts_them_separately()
+    {
+        await ConfigureTelegramAsync();
+        using var cashier = app.CreateCashierClient();
+        using var root = await app.CreateRootClientAsync();
+        var session = await CreateSessionAsync(cashier);
+        (await PasteAsync(cashier, session, Picture())).EnsureSuccessStatusCode();
+        (await PasteAsync(cashier, session, Picture())).EnsureSuccessStatusCode();
+        var fresh = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow.AddMinutes(-5), Moscow).DateTime;
+        (await UploadAsync(cashier, session, Picture(takenLocal: fresh))).EnsureSuccessStatusCode();
+
+        (await CloseShiftAsync(cashier, Shift(session.Id))).EnsureSuccessStatusCode();
+        await DispatchAsync();
+
+        var report = Assert.Single(app.Telegram.Sent).Text;
+        Assert.Contains("Фото: 3 (с кассы: 2)", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("Сомнительных", report, StringComparison.Ordinal);
+        Assert.Equal(3, Assert.Single(app.Telegram.SentPhotos).FileSizes.Length);
+
+        // В панели вставленные снимки отличимы от снятых телефоном.
+        var operationId = await app.QueryDatabaseAsync(db => db.Shifts.Select(s => s.OperationId).SingleAsync(Ct));
+        var detail = await GetAsync<OperationDetail>(root, $"/api/root/operations/{operationId}");
+        Assert.Equal([true, true, false], detail.Shift!.Photos.Select(p => p.PastedAtCashier));
+
+        // После закрытия смены вставить в ту же сессию уже нельзя.
+        Assert.Equal(HttpStatusCode.NotFound, (await PasteAsync(cashier, session, Picture())).StatusCode);
+    }
+
+    [Fact]
+    public async Task Database_rejects_a_pasted_photo_marked_stale()
+    {
+        using var cashier = app.CreateCashierClient();
+        var session = await CreateSessionAsync(cashier);
+        (await PasteAsync(cashier, session, Picture())).EnsureSuccessStatusCode();
+
+        var error = await Assert.ThrowsAsync<Npgsql.PostgresException>(() => app.QueryDatabaseAsync(db =>
+            db.Database.ExecuteSqlRawAsync("UPDATE photos SET is_stale = true", Ct)));
+
+        Assert.Equal("ck_photos_pasted_not_stale", error.ConstraintName);
+    }
+
     // ---- Вспомогательное ----
+
+    private static async Task<HttpResponseMessage> PasteAsync(HttpClient client, PhotoSessionResponse session, byte[] file)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/photo-sessions/{session.Id}/photos") { Content = new ByteArrayContent(file) };
+        return await client.SendAsync(request, Ct);
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 

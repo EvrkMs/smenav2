@@ -45,7 +45,23 @@ export function usePhotoSession() {
     const created = await createPhotoSession();
     setLoaded(created);
     setSessionId(created.id);
+    return created.id;
   }, [setSessionId]);
+
+  /** Номер открытой сессии; если её ещё нет — создаёт. */
+  const ensure = useCallback(async () => sessionId ?? (await start()), [sessionId, start]);
+
+  /** Перечитать сессию сразу, не дожидаясь очередного опроса (после вставки или удаления фото). */
+  const reload = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const fresh = await getPhotoSession(sessionId);
+      if (fresh === null) setSessionId(null);
+      else setLoaded(fresh);
+    } catch {
+      // Нет связи: очередной опрос повторит.
+    }
+  }, [sessionId, setSessionId]);
 
   const cancel = useCallback(async () => {
     if (sessionId) await cancelPhotoSession(sessionId);
@@ -55,5 +71,5 @@ export function usePhotoSession() {
   /** Смена закрыта: сервер сам закрыл сессию, осталось её забыть. */
   const forget = useCallback(() => setSessionId(null), [setSessionId]);
 
-  return { sessionId, session, start, cancel, forget };
+  return { sessionId, session, start, ensure, reload, cancel, forget };
 }

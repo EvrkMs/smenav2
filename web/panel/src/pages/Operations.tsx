@@ -254,9 +254,11 @@ function ShiftBlock({ shift }: { shift: NonNullable<OperationDetail['shift']> })
             <a key={photo.id} className="photo-card" href={`/api/root/photos/${photo.id}`} target="_blank" rel="noreferrer">
               <img src={`/api/root/photos/${photo.id}`} alt={`Фото ${i + 1}`} loading="lazy" />
               <span className={photo.isStale ? 'value-negative' : 'muted'}>
-                {photo.takenAt
-                  ? `${photo.isStale ? 'Старый снимок: ' : 'Снято '}${formatPhotoTime(photo.takenAt)}`
-                  : 'Нет времени съёмки'}
+                {photo.pastedAtCashier
+                  ? `Вставлено с кассы ${formatPhotoTime(photo.uploadedAt)}`
+                  : photo.takenAt
+                    ? `${photo.isStale ? 'Старый снимок: ' : 'Снято '}${formatPhotoTime(photo.takenAt)}`
+                    : 'Нет времени съёмки'}
               </span>
             </a>
           ))}

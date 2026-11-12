@@ -9,9 +9,15 @@ using Smena.Server.Database;
 
 namespace Smena.Server.Photos;
 
-public sealed record PhotoResponse(Guid Id, DateTimeOffset? TakenAt, bool IsStale, DateTimeOffset UploadedAt)
+/// <param name="Id">Идентификатор снимка.</param>
+/// <param name="TakenAt">Время съёмки из метаданных; null, если его нет.</param>
+/// <param name="IsStale">Старый снимок или без времени съёмки (для вставленных на кассе не оценивается).</param>
+/// <param name="UploadedAt">Когда снимок попал на сервер.</param>
+/// <param name="PastedAtCashier">Снимок экрана, вставленный на кассе из буфера обмена.</param>
+public sealed record PhotoResponse(Guid Id, DateTimeOffset? TakenAt, bool IsStale, DateTimeOffset UploadedAt, bool PastedAtCashier)
 {
-    public static PhotoResponse From(Photo photo) => new(photo.Id, photo.TakenAt, photo.IsStale, photo.UploadedAt);
+    public static PhotoResponse From(Photo photo) =>
+        new(photo.Id, photo.TakenAt, photo.IsStale, photo.UploadedAt, photo.PastedAtCashier);
 }
 
 /// <param name="UploadUrl">Ссылка для QR: страница загрузки, открывается с телефона.</param>
@@ -45,6 +51,10 @@ internal static class PhotoEndpoints
         cashier.MapPost("/", CreateSessionAsync);
         cashier.MapGet("/{id:guid}", GetSessionAsync);
         cashier.MapDelete("/{id:guid}", CancelSessionAsync);
+
+        // Снимок экрана прямо с кассы: вставка из буфера обмена, без телефона.
+        cashier.MapPost("/{id:guid}/photos", PasteAsync);
+        cashier.MapDelete("/{id:guid}/photos/{photoId:guid}", RemovePastedAsync);
 
         // Без входа: право на эти адреса даёт секрет сессии в самом адресе.
         var upload = routes.MapGroup("/api/upload/{token}");
@@ -157,10 +167,36 @@ internal static class PhotoEndpoints
     }
 
     /// <summary>Тело запроса — сам файл, без multipart: страница шлёт снимки по одному.</summary>
-    private static async Task<IResult> UploadAsync(
+    private static Task<IResult> UploadAsync(
         string token,
         HttpRequest request,
         PhotoService photos,
+        CancellationToken cancellationToken) =>
+        AcceptAsync(request, SessionGoneMessage, original => photos.UploadAsync(token, original, cancellationToken), cancellationToken);
+
+    private static Task<IResult> PasteAsync(
+        Guid id,
+        HttpRequest request,
+        PhotoService photos,
+        CancellationToken cancellationToken) =>
+        AcceptAsync(
+            request,
+            "Сессия фото закрыта: смена уже отправлена или фото сброшены. Нажмите «Вставить фото» ещё раз.",
+            original => photos.PasteAsync(id, original, cancellationToken),
+            cancellationToken);
+
+    private static async Task<Results<NoContent, NotFound>> RemovePastedAsync(
+        Guid id,
+        Guid photoId,
+        PhotoService photos,
+        CancellationToken cancellationToken) =>
+        await photos.RemoveAsync(id, photoId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
+
+    /// <summary>Общая часть приёма файла с телефона и с кассы: чтение тела и ответ по итогу.</summary>
+    private static async Task<IResult> AcceptAsync(
+        HttpRequest request,
+        string sessionGoneMessage,
+        Func<MemoryStream, Task<PhotoUploadResult>> save,
         CancellationToken cancellationToken)
     {
         using var original = await ReadBodyAsync(request, PhotoRules.MaxUploadBytes, cancellationToken);
@@ -177,18 +213,18 @@ internal static class PhotoEndpoints
             return TypedResults.BadRequest(new ErrorResponse("Файл пустой."));
         }
 
-        var result = await photos.UploadAsync(token, original, cancellationToken);
+        var result = await save(original);
 
         return result.Status switch
         {
             PhotoUploadStatus.Saved => TypedResults.Ok(PhotoResponse.From(result.Photo!)),
-            PhotoUploadStatus.SessionGone => TypedResults.NotFound(new ErrorResponse(SessionGoneMessage)),
+            PhotoUploadStatus.SessionGone => TypedResults.NotFound(new ErrorResponse(sessionGoneMessage)),
             PhotoUploadStatus.Duplicate => TypedResults.Conflict(new ErrorResponse(
                 "Это фото уже загружали раньше. Сделайте новый снимок.")),
             PhotoUploadStatus.TooMany => TypedResults.UnprocessableEntity(new ErrorResponse(
                 $"К смене можно приложить не больше {PhotoRules.MaxPerSession} фото.")),
             _ => TypedResults.UnprocessableEntity(new ErrorResponse(
-                "Файл не похож на фото. Подойдёт обычный снимок камеры (JPEG) или PNG.")),
+                "Файл не похож на фото. Подойдёт снимок камеры или снимок экрана (JPEG, PNG).")),
         };
     }
 
