@@ -28,6 +28,24 @@
 
 Дальше — этап 11: переход со старой версии.
 
+## Развёртывание (Docker + Caddy)
+
+Сервер и три интерфейса собираются в один образ (`Dockerfile`) и запускаются на сервере с [caddy-docker-proxy](https://github.com/lucaslorentz/caddy-docker-proxy): Caddy читает метки контейнера, начинает отдавать домен и сам получает сертификат.
+
+```bash
+cp deploy/.env.example deploy/.env    # заполнить: домен, пароли, токен кассы
+BUILD_PROXY=http://10.0.100.10:8080 deploy/deploy.sh manager
+```
+
+`deploy.sh` собирает образ на этой машине, передаёт его на сервер (контекст docker `manager`) и запускает `deploy/docker-compose.prod.yml` проектом `smenav2`. Метка образа — хеш коммита, так что видно, какая версия запущена.
+
+- **Что создаётся на сервере:** контейнеры `smenav2-app-1` и `smenav2-postgres-1`, тома `smenav2_postgres_data` (база), `smenav2_photos` (фото), `smenav2_keys` (ключи cookie панели), сеть `smenav2_default`. База наружу не публикуется.
+- **Секреты** лежат только в `deploy/.env` на машине, с которой идёт развёртывание. Пароль root и токен кассы из него действуют при первом запуске; дальше пароль меняется в панели, а устройства выдаются там же.
+- **Обновление** — тот же `deploy.sh`: данные в томах сохраняются, миграции применяются при старте.
+- **Откат:** `SMENA_IMAGE=smenav2:<прежний хеш> docker --context manager compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d`.
+- **Резервная копия базы:** `docker --context manager exec smenav2-postgres-1 pg_dump -U smena smena | gzip > smena-$(date +%F).sql.gz`.
+- При первом запуске на пустой базе в журнале сервера есть две записи `fail` от EF Core — это проверка таблицы истории миграций, которой ещё нет; ошибкой не является.
+
 ## Пересчёт склада
 
 1. Сервер раз в несколько минут читает из «МойСклад» отчёт «Остатки» и ассортимент и хранит список товаров в памяти. В «МойСклад» он ничего не записывает.
@@ -172,6 +190,7 @@ dotnet ef migrations add <Имя> --project src/Smena.Server --output-dir Databa
 | `Database__MigrateOnStartup` | применять миграции при старте | `true` |
 | `Cashier__BootstrapToken` | токен первого устройства кассы | в Development задан; иначе пусто — устройство не создаётся |
 | `Root__BootstrapPassword` | пароль первого пользователя панели | в Development задан; иначе пусто — пользователь не создаётся |
+| `DataProtection__KeysPath` | каталог с ключами cookie панели; в образе — `/data/keys` на томе | профиль пользователя |
 | `Photos__StoragePath` | каталог с файлами фото | `data/photos` в каталоге сервера |
 | `Photos__PublicBaseUrl` | адрес сервера для телефона (ссылка в QR), например `http://192.168.1.10:5080` | адрес, по которому обратилась касса |
 | `Telegram__BotToken` | токен бота: отправка сообщений и проверка входа в MiniApp | пусто — отправка и MiniApp выключены |
