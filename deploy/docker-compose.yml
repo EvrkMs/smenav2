@@ -1,0 +1,25 @@
+# Локальная dev-среда: только PostgreSQL. Сервер запускается через dotnet run.
+# Образ берётся с mirror.gcr.io, потому что Docker Hub недоступен напрямую.
+name: smena-dev
+
+services:
+  postgres:
+    image: mirror.gcr.io/library/postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smena}
+      POSTGRES_USER: ${POSTGRES_USER:-smena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smena_dev}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Начиная с PostgreSQL 18 том монтируется на каталог выше PGDATA.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:

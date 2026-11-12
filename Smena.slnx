@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Smena.Client/Smena.Client.csproj" />
+    <Project Path="src/Smena.Core/Smena.Core.csproj" />
+    <Project Path="src/Smena.Server/Smena.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Smena.Core.Tests/Smena.Core.Tests.csproj" />
+    <Project Path="tests/Smena.Server.Tests/Smena.Server.Tests.csproj" />
+  </Folder>
+</Solution>

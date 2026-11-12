@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Программа на кассе: окно с WebView2, которое открывает интерфейс с сервера
+    и передаёт ему токен устройства. Своей логики и своего интерфейса у неё нет,
+    поэтому обновлять её при изменениях сервера не нужно.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+    <!-- Позволяет собирать проект в WSL/Linux; запускается он только в Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>Smena.Client</RootNamespace>
+    <!--
+      Пакет WebView2 несёт и WPF-вариант элемента, который ссылается на другую
+      версию WindowsBase. Мы используем только WinForms-вариант, конфликт нас не касается.
+    -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" />
+  </ItemGroup>
+
+</Project>

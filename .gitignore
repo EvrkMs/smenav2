@@ -1,0 +1,15 @@
+artifacts/
+bin/
+obj/
+.vs/
+.idea/
+*.user
+node_modules/
+dist/
+deploy/.env
+# сборки интерфейсов (web/* → wwwroot); страница загрузки фото wwwroot/upload — исходник, она в репозитории
+src/Smena.Server/wwwroot/cashier/
+src/Smena.Server/wwwroot/panel/
+src/Smena.Server/wwwroot/miniapp/
+# файлы фото (Photos:StoragePath по умолчанию)
+src/Smena.Server/data/

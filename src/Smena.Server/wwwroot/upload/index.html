@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>Фото к смене</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f5f7; --card: #fff; --text: #16181d; --muted: #6b7280; --line: #dfe2e8;
+      --accent: #2563eb; --accent-text: #fff; --ok: #15803d; --warn: #b45309; --bad: #b91c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111317; --card: #1b1e24; --text: #eceef2; --muted: #9aa1ad; --line: #2c313a;
+        --accent: #3b82f6; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+      background: var(--bg); color: var(--text);
+      font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 520px; margin: 0 auto; display: grid; gap: 14px; }
+    h1 { font-size: 22px; margin: 4px 0 0; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+    .count { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .count.ok { color: var(--ok); }
+    .muted { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
+    ul.need { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 14px; }
+    .buttons { display: grid; gap: 10px; }
+    .button {
+      display: block; width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--line);
+      background: var(--card); color: var(--text); font: inherit; font-weight: 600; text-align: center; cursor: pointer;
+    }
+    .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+    .button[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+    input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+    figure { margin: 0; position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--card); }
+    figure img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--line); }
+    figcaption { padding: 6px 8px; font-size: 12px; color: var(--muted); }
+    figcaption.stale { color: var(--warn); }
+    figure button {
+      position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; border-radius: 50%; border: 0;
+      background: rgba(0, 0, 0, .6); color: #fff; font-size: 18px; line-height: 1; cursor: pointer;
+    }
+    .log { display: grid; gap: 6px; font-size: 14px; }
+    .log p { margin: 0; }
+    .log .bad { color: var(--bad); }
+    .gone { color: var(--bad); font-weight: 600; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Фото к смене</h1>
+
+  <section class="card gone" id="gone" hidden></section>
+
+  <section class="card" id="status" hidden>
+    <div class="count" id="count">0</div>
+    <p class="muted" id="countHint"></p>
+    <ul class="need">
+      <li>экран LanGame</li>
+      <li>экран «МойСклад»</li>
+      <li>чек сверки итогов с терминала</li>
+    </ul>
+  </section>
+
+  <section class="buttons" id="buttons" hidden>
+    <label class="button primary" id="cameraLabel">
+      Сделать снимок
+      <input type="file" id="camera" accept="image/*" capture="environment">
+    </label>
+    <label class="button" id="galleryLabel">
+      Выбрать из галереи
+      <input type="file" id="gallery" accept="image/*" multiple>
+    </label>
+  </section>
+
+  <section class="log" id="log" aria-live="polite"></section>
+
+  <section class="grid" id="grid"></section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  // Секрет сессии — последняя часть адреса страницы: /u/<секрет>.
+  const token = location.pathname.split('/').filter(Boolean).pop();
+  const api = `/api/upload/${encodeURIComponent(token)}`;
+
+  const el = (id) => document.getElementById(id);
+  const gone = el('gone'), status = el('status'), buttons = el('buttons');
+  const count = el('count'), countHint = el('countHint'), grid = el('grid'), log = el('log');
+
+  let busy = false;
+
+  const messageOf = async (response) => {
+    try { return (await response.json()).message || `Ошибка сервера (${response.status}).`; }
+    catch { return `Ошибка сервера (${response.status}).`; }
+  };
+
+  const showGone = (message) => {
+    gone.textContent = message;
+    gone.hidden = false;
+    status.hidden = true;
+    buttons.hidden = true;
+    grid.replaceChildren();
+  };
+
+  const note = (text, bad) => {
+    const line = document.createElement('p');
+    line.textContent = text;
+    if (bad) line.className = 'bad';
+    log.append(line);
+    return line;
+  };
+
+  const setBusy = (value) => {
+    busy = value;
+    for (const id of ['cameraLabel', 'galleryLabel']) el(id).setAttribute('aria-disabled', String(value));
+  };
+
+  const time = (iso) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+  const render = (data) => {
+    gone.hidden = true;
+    status.hidden = false;
+    buttons.hidden = data.photos.length >= data.maxPhotos;
+
+    const enough = data.photos.length >= data.minPhotos;
+    count.textContent = `${data.photos.length} из ${data.minPhotos}`;
+    count.className = enough ? 'count ok' : 'count';
+    countHint.textContent = enough
+      ? 'Достаточно. Можно добавить ещё или вернуться к кассе и закрыть смену.'
+      : `Нужно ещё ${data.minPhotos - data.photos.length}. Что снять:`;
+
+    grid.replaceChildren(...data.photos.map((photo, index) => {
+      const figure = document.createElement('figure');
+
+      const image = document.createElement('img');
+      image.src = `${api}/photos/${photo.id}`;
+      image.alt = `Фото ${index + 1}`;
+      image.loading = 'lazy';
+
+      const caption = document.createElement('figcaption');
+      if (photo.isStale) {
+        caption.className = 'stale';
+        caption.textContent = photo.takenAt ? 'Старый снимок — будет отмечен в отчёте' : 'Нет времени съёмки — будет отмечен в отчёте';
+      } else {
+        caption.textContent = `Снято в ${time(photo.takenAt)}`;
+      }
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '×';
+      remove.setAttribute('aria-label', `Удалить фото ${index + 1}`);
+      remove.addEventListener('click', async () => {
+        if (busy || !confirm('Удалить это фото?')) return;
+        setBusy(true);
+        try { await fetch(`${api}/photos/${photo.id}`, { method: 'DELETE' }); } catch { note('Нет связи с сервером.', true); }
+        setBusy(false);
+        await refresh();
+      });
+
+      figure.append(image, caption, remove);
+      return figure;
+    }));
+  };
+
+  const refresh = async () => {
+    let response;
+    try { response = await fetch(api, { cache: 'no-store' }); }
+    catch { return note('Нет связи с сервером. Проверьте, что телефон в сети клуба.', true); }
+
+    if (response.status === 404) return showGone(await messageOf(response));
+    if (!response.ok) return note(await messageOf(response), true);
+    render(await response.json());
+  };
+
+  // Файлы уходят по одному: сервер обрабатывает их по очереди, а при обрыве
+  // связи понятно, какой именно снимок не дошёл.
+  const upload = async (files) => {
+    if (busy || files.length === 0) return;
+    setBusy(true);
+    log.replaceChildren();
+
+    for (const [index, file] of files.entries()) {
+      const label = files.length > 1 ? `Фото ${index + 1} из ${files.length}` : 'Фото';
+      const line = note(`${label}: загружается…`);
+      try {
+        const response = await fetch(api, { method: 'POST', body: file });
+        if (response.ok) {
+          line.remove();
+        } else {
+          line.textContent = `${label}: ${await messageOf(response)}`;
+          line.className = 'bad';
+          if (response.status === 404) break;
+        }
+      } catch {
+        line.textContent = `${label}: нет связи с сервером, снимок не загружен.`;
+        line.className = 'bad';
+      }
+    }
+
+    setBusy(false);
+    await refresh();
+  };
+
+  for (const id of ['camera', 'gallery']) {
+    el(id).addEventListener('change', (event) => {
+      const files = [...event.target.files];
+      event.target.value = ''; // чтобы тот же файл можно было выбрать ещё раз
+      void upload(files);
+    });
+  }
+
+  // Вернулись на страницу (например, из камеры) — показываем актуальное состояние.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !busy) void refresh();
+  });
+
+  void refresh();
+})();
+</script>
+</body>
+</html>
