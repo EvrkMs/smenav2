@@ -1,0 +1,66 @@
+# Развёртывание на сервере с caddy-docker-proxy: Caddy сам читает метки контейнера
+# и начинает отдавать домен, сертификат получает сам.
+#
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d
+#
+# Секреты — в deploy/.env (образец: deploy/.env.example); в репозиторий он не попадает.
+# Образ собирается отдельно (deploy/deploy.sh) и должен уже быть на сервере.
+name: smenav2
+
+services:
+  app:
+    image: ${SMENA_IMAGE:-smenav2:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      Database__ConnectionString: Host=postgres;Database=smena;Username=smena;Password=${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в deploy/.env}
+      Root__BootstrapPassword: ${ROOT_PASSWORD:?задайте ROOT_PASSWORD в deploy/.env}
+      Cashier__BootstrapToken: ${CASHIER_TOKEN:?задайте CASHIER_TOKEN в deploy/.env}
+      # Адрес, который попадает в QR для загрузки фото с телефона.
+      Photos__PublicBaseUrl: https://${SMENA_DOMAIN:?задайте SMENA_DOMAIN в deploy/.env}
+      # Сервер стоит за Caddy: настоящую схему (https) и адрес клиента он берёт из
+      # заголовков X-Forwarded-*. Контейнер доступен только из сети caddy.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      # Необязательное; пустые значения выключают соответствующую часть.
+      Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-}
+      Telegram__ProxyUri: ${TELEGRAM_PROXY_URI:-}
+      MoySklad__Token: ${MOYSKLAD_TOKEN:-}
+    volumes:
+      - photos:/data/photos
+      - keys:/data/keys
+    networks:
+      - default
+      - caddy
+    labels:
+      caddy: ${SMENA_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      # Сертификат настраивается глобально (acme_dns); меток caddy.tls здесь быть не должно:
+      # одна неверная ломает конфигурацию Caddy для всех сайтов сразу.
+
+  postgres:
+    image: mirror.gcr.io/library/postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: smena
+      POSTGRES_USER: smena
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      # Начиная с PostgreSQL 18 том монтируется на каталог выше PGDATA.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smena -d smena"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Наружу база не публикуется: к ней ходит только сервер по внутренней сети.
+
+volumes:
+  postgres_data:
+  photos:
+  keys:
+
+networks:
+  caddy:
+    external: true

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Smena.Server.Accounting;
 using Smena.Server.Banking;
@@ -23,6 +24,16 @@ builder.Services.ConfigureHttpJsonOptions(static options =>
 // Неразборчивое тело запроса — всегда ответ 400, в том числе в Development:
 // по умолчанию там бросается исключение, и клиент получает 500.
 builder.Services.Configure<RouteHandlerOptions>(static options => options.ThrowOnBadRequest = false);
+
+// Ключи, которыми подписана cookie панели. По умолчанию они живут в профиле
+// пользователя, а в контейнере он пропадает при каждом пересоздании — root пришлось
+// бы входить заново после каждого обновления. В контейнере задаётся каталог на томе.
+if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
+{
+    builder.Services.AddDataProtection()
+        .SetApplicationName("Smena")
+        .PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+}
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSmenaDatabase();

@@ -1,0 +1,17 @@
+# В контекст сборки идут только исходники: без этого в него попали бы
+# гигабайты node_modules и результатов сборки, а с ними — секреты из deploy/.env.
+.git
+artifacts
+**/bin
+**/obj
+**/node_modules
+**/dist
+src/Smena.Server/wwwroot/cashier
+src/Smena.Server/wwwroot/panel
+src/Smena.Server/wwwroot/miniapp
+src/Smena.Server/data
+src/Smena.Client
+tests
+docs
+deploy
+**/*.user
