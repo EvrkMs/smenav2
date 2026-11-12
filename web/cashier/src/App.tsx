@@ -4,6 +4,7 @@ import Coming from './pages/Coming';
 import Advance from './pages/Advance';
 import Expense from './pages/Expense';
 import Raport from './pages/Raport';
+import Stockcount from './pages/Stockcount';
 import { SafeTicker } from './components/SafeTicker';
 import { Splash } from './components/Splash';
 import { TokenGate } from './components/TokenGate';
@@ -17,6 +18,7 @@ const tabs = [
   { key: 'advance', label: 'Аванс / ЗП', component: Advance },
   { key: 'expense', label: 'Расход', component: Expense },
   { key: 'coming', label: 'Приход', component: Coming },
+  { key: 'stockcount', label: 'Пересчёт склада', component: Stockcount },
   { key: 'employees', label: 'Сотрудники', component: Employees },
 ] as const;
 

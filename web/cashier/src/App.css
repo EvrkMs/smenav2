@@ -117,6 +117,7 @@
 .screen-grid-single { grid-template-columns: minmax(280px, 420px); }
 .raport-grid { grid-template-columns: repeat(3, minmax(280px, 1fr)); }
 .stockcount-grid { grid-template-columns: repeat(2, minmax(320px, 1fr)); }
+.hint-line { margin: 0 0 12px; }
 
 .raport-row {
   display: grid;

@@ -177,9 +177,13 @@ public sealed class SmenaApp : IAsyncLifetime
             .UseSetting("Photos:StoragePath", PhotoDirectory)
             .UseSetting("Photos:PublicBaseUrl", PublicBaseUrl)
             .UseSetting("Telegram:BotToken", BotToken)
+            .UseSetting("MoySklad:Token", "test-token-not-used-anywhere")
             .ConfigureTestServices(services =>
             {
                 services.AddSingleton<ITelegramClient>(Telegram);
+
+                // Остатки — из подставного источника: в «МойСклад» тесты не ходят.
+                services.AddSingleton<Smena.Server.Stock.IStockSource>(new Stock.FakeStockSource());
 
                 // С токеном бота сервер запустил бы фоновую отправку очереди. Тесты
                 // разбирают очередь сами, по шагам, — фоновый отправитель им мешал бы.

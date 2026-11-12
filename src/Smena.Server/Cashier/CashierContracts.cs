@@ -133,4 +133,5 @@ public sealed record CashOperationResponse(Guid OperationId, bool Replayed, int 
 [JsonSerializable(typeof(Photos.PhotoSessionResponse))]
 [JsonSerializable(typeof(Photos.UploadStatusResponse))]
 [JsonSerializable(typeof(Photos.PhotoResponse))]
+[JsonSerializable(typeof(Stock.StockResponse))]
 internal sealed partial class ApiJsonContext : JsonSerializerContext;

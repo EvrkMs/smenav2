@@ -240,6 +240,32 @@ export async function cancelPhotoSession(id: string): Promise<void> {
   await request('DELETE', `/photo-sessions/${id}`);
 }
 
+export interface StockItem {
+  /** Устойчивый ключ позиции: по нему товар узнаётся после обновления остатков. */
+  id: string;
+  name: string;
+  article: string | null;
+  folder: string | null;
+  /** Остаток по «МойСклад». Бывает дробным и отрицательным. */
+  stock: number;
+}
+
+export interface Stock {
+  /** false — доступ к «МойСклад» на сервере не настроен. */
+  enabled: boolean;
+  /** Когда сервер в последний раз удачно загрузил остатки; null — ещё ни разу. */
+  refreshedAt: string | null;
+  /** Почему не удалась последняя попытка обновления; остатки при этом прежние. */
+  error: string | null;
+  items: StockItem[];
+}
+
+/** Остатки «МойСклад» из памяти сервера — мгновенно. */
+export const getStock = () => get<Stock>('/stock');
+
+/** Просит сервер перечитать остатки из «МойСклад» (не чаще раза в полминуты). */
+export const refreshStock = () => post<Stock>('/stock/refresh', undefined);
+
 export const payout = (
   body: { employeeId: string; amount: number; isSalary: boolean; comment: string | null },
   requestKey: string,

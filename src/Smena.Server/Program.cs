@@ -8,6 +8,7 @@ using Smena.Server.Notifications;
 using Smena.Server.Photos;
 using Smena.Server.Root;
 using Smena.Server.Shifts;
+using Smena.Server.Stock;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +32,7 @@ builder.Services.AddMiniAppAuthentication();
 builder.Services.AddScoped<Ledger>();
 builder.Services.AddNotifications();
 builder.Services.AddPhotos();
+builder.Services.AddStock();
 builder.Services.AddScoped<BankReceiptService>();
 builder.Services.AddScoped<ShiftService>();
 builder.Services.AddScoped<CashOperationService>();
@@ -55,6 +57,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 });
 app.MapCashierApi();
 app.MapPhotoApi();
+app.MapStockApi();
 app.MapRootApi();
 app.MapMiniAppApi();
 app.MapCashierUi();
