@@ -25,7 +25,8 @@ services:
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       # Необязательное; пустые значения выключают соответствующую часть.
       Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-}
-      Telegram__ProxyUri: ${TELEGRAM_PROXY_URI:-}
+      # Прокси для всех внешних запросов (Telegram, «МойСклад»). Задан — прямых запросов наружу нет.
+      Network__ProxyUri: ${PROXY_URI:-}
       MoySklad__Token: ${MOYSKLAD_TOKEN:-}
     volumes:
       - photos:/data/photos
