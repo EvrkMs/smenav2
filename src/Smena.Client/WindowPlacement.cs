@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Smena.Client;
 
@@ -10,6 +11,7 @@ internal sealed record WindowPlacement(int X, int Y, int Width, int Height, bool
 {
     private static readonly string FilePath = Path.Combine(ConnectionSettings.DataDirectory, "window.json");
 
+    [JsonIgnore]
     public Rectangle Bounds => new(X, Y, Width, Height);
 
     public static WindowPlacement? Load()
