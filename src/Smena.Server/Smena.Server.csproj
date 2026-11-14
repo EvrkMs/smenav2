@@ -5,11 +5,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Тесты собирают части сервера по отдельности (например, только «МойСклад» с прокси). -->
-    <InternalsVisibleTo Include="Smena.Server.Tests" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

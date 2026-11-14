@@ -9,10 +9,9 @@ using Microsoft.Extensions.Options;
 namespace Smena.Server.Notifications;
 
 /// <summary>
-/// Подключение к Telegram. Токен — параметр развёртывания, поэтому задаётся
-/// конфигурацией и переменной среды <c>Telegram__BotToken</c>, а не в панели.
-/// Прокси общий для всех внешних запросов — <see cref="Network.NetworkOptions"/>.
-/// Чаты и темы — в настройках клуба.
+/// Подключение к Telegram. Секреты и адрес прокси — параметры развёртывания,
+/// поэтому задаются конфигурацией и переменными среды (<c>Telegram__BotToken</c>,
+/// <c>Telegram__ProxyUri</c>), а не в панели. Чаты и темы — в настройках клуба.
 /// </summary>
 public sealed class TelegramOptions
 {
@@ -20,6 +19,12 @@ public sealed class TelegramOptions
 
     /// <summary>Токен бота. Пусто — отправка выключена, сообщения копятся в очереди.</summary>
     public string? BotToken { get; set; }
+
+    /// <summary>
+    /// Прокси для выхода к Telegram, например <c>socks5://192.168.88.92:10801</c>.
+    /// Нужен там, где Telegram недоступен напрямую.
+    /// </summary>
+    public string? ProxyUri { get; set; }
 
     /// <summary>Как часто проверять очередь, секунд.</summary>
     public int PollIntervalSeconds { get; set; } = 5;
@@ -73,14 +78,26 @@ public sealed class TelegramClient : ITelegramClient, IDisposable
     private readonly HttpClient _http;
     private readonly string _baseUrl;
 
-    public TelegramClient(IOptions<TelegramOptions> options, IOptions<Network.NetworkOptions> network)
+    public TelegramClient(IOptions<TelegramOptions> options)
     {
         var settings = options.Value;
 
         // Собственный HttpClient, а не IHttpClientFactory: фабрика пишет в лог адрес
         // каждого запроса, а в адресе Bot API стоит токен бота.
+        var handler = new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+        };
+
+        if (!string.IsNullOrWhiteSpace(settings.ProxyUri))
+        {
+            handler.Proxy = new WebProxy(settings.ProxyUri);
+            handler.UseProxy = true;
+        }
+
         // Общий таймаут выключен: у текста и у альбома он разный и задаётся на каждый запрос.
-        _http = new HttpClient(Network.OutboundHttp.CreateHandler(network.Value)) { Timeout = Timeout.InfiniteTimeSpan };
+        _http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
         _baseUrl = $"https://api.telegram.org/bot{settings.BotToken}/";
     }
 

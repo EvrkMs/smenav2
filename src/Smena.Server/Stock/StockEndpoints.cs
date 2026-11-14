@@ -1,7 +1,7 @@
+using System.Net;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
 using Smena.Server.Cashier;
-using Smena.Server.Network;
 
 namespace Smena.Server.Stock;
 
@@ -24,11 +24,13 @@ internal static class StockEndpoints
         services.AddSingleton<IValidateOptions<MoySkladOptions>, MoySkladOptionsValidator>();
         services.AddOptions<MoySkladOptions>().BindConfiguration(MoySkladOptions.SectionName).ValidateOnStart();
 
-        // Через общий выход наружу: тот же прокси, что у Telegram. Распаковку сжатых
-        // ответов (а «МойСклад» отдаёт только сжатые) обработчик включает сам.
+        // «МойСклад» отдаёт ответы только сжатыми.
         services.AddHttpClient<IStockSource, MoySkladClient>()
-            .ConfigurePrimaryHttpMessageHandler(static provider =>
-                OutboundHttp.CreateHandler(provider.GetRequiredService<IOptions<NetworkOptions>>().Value));
+            .ConfigurePrimaryHttpMessageHandler(static () => new SocketsHttpHandler
+            {
+                AutomaticDecompression = DecompressionMethods.All,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            });
 
         services.AddSingleton<StockCache>(static provider => new StockCache(
             // Источник живёт столько же, сколько кэш; соединения обновляет сам обработчик.

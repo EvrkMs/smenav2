@@ -118,7 +118,6 @@ public sealed partial class OutboxDispatcher(
 internal sealed partial class OutboxSenderService(
     IServiceScopeFactory scopes,
     IOptions<TelegramOptions> options,
-    IOptions<Network.NetworkOptions> network,
     ILogger<OutboxSenderService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -130,7 +129,7 @@ internal sealed partial class OutboxSenderService(
             return;
         }
 
-        LogEnabled(logger, network.Value.HasProxy ? "через прокси" : "напрямую");
+        LogEnabled(logger, string.IsNullOrWhiteSpace(settings.ProxyUri) ? "напрямую" : "через прокси");
 
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Max(1, settings.PollIntervalSeconds)));
         do

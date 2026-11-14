@@ -14,6 +14,13 @@ services:
   app:
     image: ${SMENA_IMAGE:-smenav2:latest}
     restart: unless-stopped
+    # Сторож исходящих подключений (docker/entrypoint.sh): правила ставятся от root,
+    # затем сервер работает от пользователя app без возможностей ядра.
+    # Из всех возможностей оставлены только нужные скрипту запуска:
+    #   NET_ADMIN — поставить правила; SETUID, SETGID, SETPCAP — сбросить права
+    #   перед запуском сервера; KILL — передать серверу сигнал остановки.
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, SETUID, SETGID, SETPCAP, KILL]
     environment:
       Database__ConnectionString: Host=${DB_HOST:-db};Database=smenav2;Username=smenav2;Password=${DB_PASSWORD:?задайте DB_PASSWORD в deploy/.env}
       Root__BootstrapPassword: ${ROOT_PASSWORD:?задайте ROOT_PASSWORD в deploy/.env}
@@ -25,8 +32,7 @@ services:
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       # Необязательное; пустые значения выключают соответствующую часть.
       Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-}
-      # Прокси для всех внешних запросов (Telegram, «МойСклад»). Задан — прямых запросов наружу нет.
-      Network__ProxyUri: ${PROXY_URI:-}
+      Telegram__ProxyUri: ${TELEGRAM_PROXY_URI:-}
       MoySklad__Token: ${MOYSKLAD_TOKEN:-}
     volumes:
       - photos:/data/photos

@@ -37,6 +37,11 @@ RUN dotnet publish src/Smena.Server/Smena.Server.csproj -c Release -r linux-x64 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
+# nftables — для сторожа исходящих подключений (docker/entrypoint.sh).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nftables \
+    && rm -rf /var/lib/apt/lists/*
+
 # Каталоги под тома создаются заранее и отдаются непривилегированному пользователю:
 # новый том наследует владельца каталога, на который смонтирован.
 #   /data/photos — файлы фото;
@@ -45,13 +50,15 @@ WORKDIR /app
 RUN mkdir -p /data/photos /data/keys && chown -R $APP_UID /data
 
 COPY --from=build /app ./
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/smena-entrypoint
 
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     Photos__StoragePath=/data/photos \
     DataProtection__KeysPath=/data/keys
 
-USER $APP_UID
+# Запускается от root: скрипт ставит правила сторожа и сам переходит на
+# пользователя app без прав. Контейнеру нужна возможность NET_ADMIN.
 EXPOSE 8080
 VOLUME ["/data/photos", "/data/keys"]
 
-ENTRYPOINT ["dotnet", "Smena.Server.dll"]
+ENTRYPOINT ["/usr/local/bin/smena-entrypoint"]

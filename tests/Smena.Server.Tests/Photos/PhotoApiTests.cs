@@ -595,9 +595,7 @@ public sealed class PhotoApiTests(SmenaApp app) : IAsyncLifetime
             File.Delete(file);
         }
 
-        using var telegram = new TelegramClient(
-            Microsoft.Extensions.Options.Options.Create(new TelegramOptions { BotToken = "0:test" }),
-            Microsoft.Extensions.Options.Options.Create(new Smena.Server.Network.NetworkOptions()));
+        using var telegram = new TelegramClient(Microsoft.Extensions.Options.Options.Create(new TelegramOptions { BotToken = "0:test" }));
         var paths = await app.QueryDatabaseAsync(db => db.Photos.Select(p => p.Path).ToListAsync(Ct));
 
         var result = await telegram.SendPhotosAsync(

@@ -25,7 +25,7 @@ IMAGE=smenav2:$TAG
 echo "=== сборка $IMAGE"
 BUILD_ARGS=()
 if [ -n "${BUILD_PROXY:-}" ]; then
-  BUILD_ARGS+=(--build-arg "HTTPS_PROXY=$BUILD_PROXY" --build-arg "HTTP_PROXY=$BUILD_PROXY")
+  BUILD_ARGS+=(--build-arg "HTTPS_PROXY=$BUILD_PROXY" --build-arg "HTTP_PROXY=$BUILD_PROXY" --build-arg "https_proxy=$BUILD_PROXY" --build-arg "http_proxy=$BUILD_PROXY")
 fi
 DOCKER_HOST=unix:///var/run/docker.sock docker build "${BUILD_ARGS[@]}" -t "$IMAGE" -t smenav2:latest .
 
