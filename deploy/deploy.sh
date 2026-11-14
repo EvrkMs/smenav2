@@ -33,5 +33,5 @@ echo "=== передача образа на $CONTEXT"
 DOCKER_HOST=unix:///var/run/docker.sock docker save "$IMAGE" | gzip | docker --context "$CONTEXT" load
 
 echo "=== запуск"
-SMENA_IMAGE=$IMAGE $COMPOSE up -d --wait --wait-timeout 120
+SMENA_IMAGE=$IMAGE $COMPOSE up -d --remove-orphans --wait --wait-timeout 120
 SMENA_IMAGE=$IMAGE $COMPOSE ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}'

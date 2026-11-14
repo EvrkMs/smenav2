@@ -39,11 +39,19 @@ BUILD_PROXY=http://10.0.100.10:8080 deploy/deploy.sh manager
 
 `deploy.sh` собирает образ на этой машине, передаёт его на сервер (контекст docker `manager`) и запускает `deploy/docker-compose.prod.yml` проектом `smenav2`. Метка образа — хеш коммита, так что видно, какая версия запущена.
 
-- **Что создаётся на сервере:** контейнеры `smenav2-app-1` и `smenav2-postgres-1`, тома `smenav2_postgres_data` (база), `smenav2_photos` (фото), `smenav2_keys` (ключи cookie панели), сеть `smenav2_default`. База наружу не публикуется.
+- **Что создаётся на сервере:** контейнер `smenav2-app-1`, тома `smenav2_photos` (фото) и `smenav2_keys` (ключи cookie панели).
+- **База** — в общем контейнере PostgreSQL сервера (`postgres` из проекта `smena`, имя в сети `db`, сеть `smena`): отдельная база `smenav2` с владельцем, ролью `smenav2`. Роль и базу один раз создаёт администратор базы:
+
+  ```sql
+  CREATE ROLE smenav2 LOGIN PASSWORD '…';   -- тот же пароль, что DB_PASSWORD в deploy/.env
+  CREATE DATABASE smenav2 OWNER smenav2;
+  ```
+
+  Таблицы, триггеры и представления сервер создаёт сам при старте. Если контейнер базы или сеть называются иначе, задайте `DB_HOST` и `DB_NETWORK` в `deploy/.env`.
 - **Секреты** лежат только в `deploy/.env` на машине, с которой идёт развёртывание. Пароль root и токен кассы из него действуют при первом запуске; дальше пароль меняется в панели, а устройства выдаются там же.
 - **Обновление** — тот же `deploy.sh`: данные в томах сохраняются, миграции применяются при старте.
 - **Откат:** `SMENA_IMAGE=smenav2:<прежний хеш> docker --context manager compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d`.
-- **Резервная копия базы:** `docker --context manager exec smenav2-postgres-1 pg_dump -U smena smena | gzip > smena-$(date +%F).sql.gz`.
+- **Резервная копия базы:** `docker --context manager exec postgres sh -c 'pg_dump -U "$POSTGRES_USER" smenav2' | gzip > smenav2-$(date +%F).sql.gz`.
 - При первом запуске на пустой базе в журнале сервера есть две записи `fail` от EF Core — это проверка таблицы истории миграций, которой ещё нет; ошибкой не является.
 
 ## Пересчёт склада
