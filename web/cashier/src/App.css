@@ -109,7 +109,10 @@
 }
 .screen-grid-single { grid-template-columns: minmax(280px, 420px); }
 /* Колонок столько, сколько помещается: на узком экране «Предпросмотр» уходит
-   вниз, а не обрезается справа с горизонтальной прокруткой. */
+   вниз, а не обрезается справа с горизонтальной прокруткой. Три колонки
+   помещаются от 1320 px ширины. Минимальная область окна программы кассы —
+   1320×800 (Smena.Client, MainForm.MinimumContent): при ней отчёт с тремя
+   сотрудниками и QR виден без прокрутки. */
 .raport-grid { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
 .stockcount-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
 .hint-line { margin: 0 0 12px; }
@@ -133,6 +136,8 @@
   font-size: 13.5px;
 }
 .ledger-list li:last-child { border-bottom: none; }
+.preview-payable { margin: 0 0 14px; }
+.preview-payable li { padding: 5px 0; }
 
 .radio-row { display: flex; gap: 10px; margin-bottom: 14px; }
 .radio-pill {

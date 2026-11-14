@@ -263,19 +263,6 @@ export default function Raport() {
           </p>
         </Panel>
 
-        {calculation && calculation.employees.length > 0 && (
-          <Panel title="К выплате сотрудникам">
-            <ul className="ledger-list">
-              {calculation.employees.map((e) => (
-                <li key={e.employeeId}>
-                  <span>{e.name}</span>
-                  <span className="tabular">{formatMoney(e.payable)} ₽</span>
-                </li>
-              ))}
-            </ul>
-          </Panel>
-        )}
-
         <PhotoPanel
           minPhotos={config.minPhotos}
           loading={photos.sessionId !== null && photos.session === null}
@@ -356,6 +343,22 @@ export default function Raport() {
                 <dd className="tabular">{formatSigned(calculation.cashToSafe)} ₽</dd>
               </div>
             </dl>
+
+            {/* Выплаты по сотрудникам — здесь же, а не отдельной панелью слева:
+                тогда отчёт на трёх сотрудников с QR помещается в окно без прокрутки. */}
+            {calculation.employees.length > 0 && (
+              <>
+                <p className="field-group-title">К выплате</p>
+                <ul className="ledger-list preview-payable">
+                  {calculation.employees.map((e) => (
+                    <li key={e.employeeId}>
+                      <span>{e.name}</span>
+                      <span className="tabular">{formatMoney(e.payable)} ₽</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
 
             {activeRows.length > 0 && (
               <p className={`muted tabular hint ${calculation.enteredMinus !== calculation.requiredMinus ? 'value-negative' : ''}`}>

@@ -51,7 +51,7 @@ export default function PhotoPanel({ minPhotos, loading, session, busy, onStart,
     <Panel title="Фото">
       <div className="photo-qr">
         {/* Белое поле вокруг кода обязательно: без него камера не распознаёт QR на тёмной теме. */}
-        <QRCodeSVG value={session.uploadUrl} size={176} marginSize={3} bgColor="#ffffff" fgColor="#000000" />
+        <QRCodeSVG value={session.uploadUrl} size={148} marginSize={3} bgColor="#ffffff" fgColor="#000000" />
         <div className="photo-status">
           <p className={`photo-count tabular ${enough ? 'value-positive' : ''}`}>
             {count} из {session.minPhotos}

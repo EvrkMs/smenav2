@@ -12,6 +12,17 @@ internal sealed class MainForm : Form
     private const string RetryMessage = "retry";
     private const string SettingsMessage = "settings";
 
+    /// <summary>
+    /// Наименьшая область страницы, в которую помещается интерфейс кассы целиком:
+    /// отчёт смены — тремя колонками, без прокрутки, даже с тремя сотрудниками и
+    /// показанным QR. Совпадает с расчётом в web/cashier/src/App.css (.raport-grid).
+    /// В пикселях при масштабе 100%: экрану 1920×1080 хватает масштаба до 125%.
+    /// </summary>
+    private static readonly Size MinimumContent = new(1320, 800);
+
+    /// <summary>Размер окна при первом запуске, если экран позволяет.</summary>
+    private static readonly Size DefaultContent = new(1600, 960);
+
     private readonly WebView2 _webView = new() { Dock = DockStyle.Fill };
     private ConnectionSettings _settings;
 
@@ -20,16 +31,67 @@ internal sealed class MainForm : Form
         _settings = settings;
 
         Text = "Смена";
-        StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(1280, 800);
-        MinimumSize = new Size(1024, 640);
-
-        // Касса — единственная программа на экране администратора: сразу на весь экран.
-        WindowState = FormWindowState.Maximized;
         BackColor = Color.FromArgb(0x16, 0x1d, 0x27);
 
         Controls.Add(_webView);
         Load += async (_, _) => await InitializeAsync();
+        FormClosing += (_, _) => SavePlacement();
+        DpiChanged += (_, _) => ApplyMinimumSize();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+
+        // Размеры — после создания окна: только тогда известен масштаб экрана (DeviceDpi).
+        ApplyMinimumSize();
+        RestorePlacement();
+    }
+
+    /// <summary>Пиксели «при 100%» → пиксели экрана с его масштабом.</summary>
+    private Size Scaled(Size size) => new(size.Width * DeviceDpi / 96, size.Height * DeviceDpi / 96);
+
+    /// <summary>Окно нельзя сделать меньше, чем нужно странице, чтобы всё поместилось.</summary>
+    private void ApplyMinimumSize() => MinimumSize = SizeFromClientSize(Scaled(MinimumContent));
+
+    private void RestorePlacement()
+    {
+        var screen = Screen.FromControl(this).WorkingArea;
+
+        // Сохранённое положение — если окно всё ещё видно хотя бы частью на каком-то экране
+        // (монитор могли отключить) и не меньше допустимого.
+        if (WindowPlacement.Load() is { } saved
+            && Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(saved.Bounds))
+            && saved.Width >= MinimumSize.Width && saved.Height >= MinimumSize.Height)
+        {
+            StartPosition = FormStartPosition.Manual;
+            Bounds = saved.Bounds;
+            WindowState = saved.Maximized ? FormWindowState.Maximized : FormWindowState.Normal;
+            return;
+        }
+
+        var size = SizeFromClientSize(Scaled(DefaultContent));
+
+        // Экран меньше размера по умолчанию (или едва больше минимума) — на весь экран.
+        if (size.Width > screen.Width || size.Height > screen.Height)
+        {
+            WindowState = FormWindowState.Maximized;
+            return;
+        }
+
+        StartPosition = FormStartPosition.Manual;
+        Bounds = new Rectangle(
+            screen.Left + ((screen.Width - size.Width) / 2),
+            screen.Top + ((screen.Height - size.Height) / 2),
+            size.Width,
+            size.Height);
+    }
+
+    private void SavePlacement()
+    {
+        // RestoreBounds — размер «не на весь экран», чтобы после разворачивания было куда вернуться.
+        var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        new WindowPlacement(bounds.X, bounds.Y, bounds.Width, bounds.Height, WindowState == FormWindowState.Maximized).Save();
     }
 
     private async Task InitializeAsync()
