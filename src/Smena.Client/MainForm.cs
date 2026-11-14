@@ -23,6 +23,9 @@ internal sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1280, 800);
         MinimumSize = new Size(1024, 640);
+
+        // Касса — единственная программа на экране администратора: сразу на весь экран.
+        WindowState = FormWindowState.Maximized;
         BackColor = Color.FromArgb(0x16, 0x1d, 0x27);
 
         Controls.Add(_webView);
