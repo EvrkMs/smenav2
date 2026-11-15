@@ -10,6 +10,7 @@ using Smena.Server.Cashier;
 using Smena.Server.Database;
 using Smena.Server.Employees;
 using Smena.Server.Notifications;
+using Smena.Server.Root;
 
 namespace Smena.Server.Tests.Notifications;
 
@@ -89,15 +90,64 @@ public sealed class OutboxTests(SmenaApp app) : IAsyncLifetime
         Assert.All(queue, message => Assert.Equal(OutboxStatus.Pending, message.Status));
         Assert.Single(queue.Select(message => message.OperationId).Distinct());
 
-        Assert.Contains("Выручка: 18 500", queue[0].Text, StringComparison.Ordinal);
-        Assert.Contains("- Иван: 8 ч, минус 300, ЗП 1 300", queue[0].Text, StringComparison.Ordinal);
+        Assert.Contains("Выручка: 18500", queue[0].Text, StringComparison.Ordinal);
+        Assert.Contains("- Иван: 8 ч, минус 300, ЗП 1300", queue[0].Text, StringComparison.Ordinal);
         Assert.Contains("Причина недостачи: не сошлась касса", queue[0].Text, StringComparison.Ordinal);
 
-        Assert.Equal("+6 500 — Наличка в сейф\nВ сейфе: 56 500", queue[1].Text.ReplaceLineEndings("\n"));
+        Assert.Equal("+6500 Пополнение сейфа (касса)\nВ сейфе: 56500", Body(queue[1].Text));
 
         Assert.Equal(
-            "+1 600 — Начисление за смену\n-300 — Удержание за недостачу\nБаланс: 1 300",
-            queue[2].Text.ReplaceLineEndings("\n"));
+            "+1600 Начисление за смену\n-300 Удержание за недостачу\nБаланс: 1300",
+            Body(queue[2].Text));
+
+        // Каждое сообщение начинается с времени операции.
+        Assert.All(queue, message => Assert.Matches(@"^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}\r?\n", message.Text));
+    }
+
+    [Fact]
+    public async Task Cancelling_an_operation_replies_cancel_to_each_of_its_messages()
+    {
+        await ConfigureTelegramAsync();
+        using var client = app.CreateCashierClient();
+        using var root = await app.CreateRootClientAsync();
+        using var shift = await CloseShiftAsync(client, ShortageShift());
+
+        // Отчёт уже ушёл, сейф и Иван ещё нет; сообщение в тему сейфа Telegram отклонит.
+        app.Telegram.Script(
+            new TelegramSendResult(TelegramOutcome.Sent),
+            new TelegramSendResult(TelegramOutcome.Permanent, Error: "Telegram 400: message thread not found"),
+            new TelegramSendResult(TelegramOutcome.Transient, Error: "нет связи"));
+        await DispatchAsync();
+        var originals = await QueueAsync();
+
+        var operationId = originals[0].OperationId!.Value;
+        using var cancel = await PostAsync(root, $"/api/root/operations/{operationId}/cancel", new CancelRequest("ошибка в отчёте"));
+        Assert.Equal(HttpStatusCode.NoContent, cancel.StatusCode);
+
+        // Отдельного сообщения об отмене в тему отчётов нет: только ответы.
+        // На отклонённое Telegram сообщение отвечать нечем — ответа нет.
+        var replies = (await QueueAsync()).Where(message => message.ReplyToSequence is not null).ToList();
+        Assert.Equal(
+            [(originals[0].Sequence, AdminChat, ReportsThread), (originals[2].Sequence, SalaryChat, IvanThread)],
+            replies.Select(message => (message.ReplyToSequence!.Value, message.ChatId, message.ThreadId!.Value)));
+        Assert.All(replies, message => Assert.Equal("Отмена", message.Text));
+
+        await app.QueryDatabaseAsync(db => db.Database.ExecuteSqlRawAsync(
+            "UPDATE outbox_messages SET next_attempt_at = now() - interval '1 second'", Ct));
+        app.Telegram.Reset();
+        await DispatchAsync();
+
+        // Сначала доходит само сообщение Ивана, затем ответы с номерами исходных в Telegram.
+        var sentOriginals = await QueueAsync();
+        var ivanMessageId = sentOriginals.Single(message => message.Sequence == originals[2].Sequence).TelegramMessageId;
+        Assert.Equal(
+            [
+                (IvanThread, (string?)null, (long?)null),
+                (ReportsThread, "Отмена", originals[0].TelegramMessageId),
+                (IvanThread, "Отмена", ivanMessageId),
+            ],
+            app.Telegram.Sent.Select(message =>
+                (message.ThreadId!.Value, message.Text == "Отмена" ? message.Text : null, message.ReplyTo)));
     }
 
     [Fact]
@@ -130,12 +180,12 @@ public sealed class OutboxTests(SmenaApp app) : IAsyncLifetime
 
         Assert.Equal(
             [
-                (AdminChat, SafeThread, "-1 000 — Аванс: Иван\nВ сейфе: 55 500"),
-                (SalaryChat, IvanThread, "-1 000 — Аванс\nБаланс: 300"),
-                (AdminChat, ExpensesThread, "Расход 450 — Хозяйственные\nвода\nПровёл: Касса"),
-                (AdminChat, SafeThread, "-450 — Хозяйственные\nВ сейфе: 55 050"),
+                (AdminChat, SafeThread, "-1000 Аванс: Иван\nВ сейфе: 55500"),
+                (SalaryChat, IvanThread, "-1000 Аванс\nБаланс: 300"),
+                (AdminChat, ExpensesThread, "Расход 450 Хозяйственные\nвода\nПровёл: Касса"),
+                (AdminChat, SafeThread, "-450 Хозяйственные\nВ сейфе: 55050"),
             ],
-            queue.Select(message => (message.ChatId, message.ThreadId!.Value, message.Text.ReplaceLineEndings("\n"))));
+            queue.Select(message => (message.ChatId, message.ThreadId!.Value, Body(message.Text))));
     }
 
     [Fact]
@@ -248,6 +298,13 @@ public sealed class OutboxTests(SmenaApp app) : IAsyncLifetime
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    /// <summary>Текст без первой строки — времени операции, которое в тесте не зафиксировано.</summary>
+    private static string Body(string text)
+    {
+        var normalized = text.ReplaceLineEndings("\n");
+        return normalized[(normalized.IndexOf('\n', StringComparison.Ordinal) + 1)..];
+    }
 
     private ShiftInput ShortageShift() => new()
     {

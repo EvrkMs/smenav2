@@ -11,7 +11,7 @@ public sealed class FakeTelegramClient : ITelegramClient
     private readonly Queue<TelegramSendResult> _script = new();
     private long _nextMessageId = 1000;
 
-    public List<(long ChatId, int? ThreadId, string Text)> Sent { get; } = [];
+    public List<(long ChatId, int? ThreadId, string Text, long? ReplyTo)> Sent { get; } = [];
 
     /// <summary>Все попытки, включая неудачные.</summary>
     public int Attempts { get; private set; }
@@ -59,7 +59,12 @@ public sealed class FakeTelegramClient : ITelegramClient
         return Task.FromResult(result);
     }
 
-    public Task<TelegramSendResult> SendMessageAsync(long chatId, int? threadId, string text, CancellationToken cancellationToken)
+    public Task<TelegramSendResult> SendMessageAsync(
+        long chatId,
+        int? threadId,
+        string text,
+        long? replyToMessageId,
+        CancellationToken cancellationToken)
     {
         Attempts++;
 
@@ -69,7 +74,7 @@ public sealed class FakeTelegramClient : ITelegramClient
 
         if (result.Outcome == TelegramOutcome.Sent)
         {
-            Sent.Add((chatId, threadId, text));
+            Sent.Add((chatId, threadId, text, replyToMessageId));
             result = result with { MessageId = _nextMessageId++ };
         }
 

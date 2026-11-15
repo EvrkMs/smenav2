@@ -47,13 +47,23 @@ public readonly record struct TelegramSendResult(TelegramOutcome Outcome, long M
 
 public interface ITelegramClient
 {
-    Task<TelegramSendResult> SendMessageAsync(long chatId, int? threadId, string text, CancellationToken cancellationToken);
+    /// <param name="chatId">Чат.</param>
+    /// <param name="threadId">Тема в чате, если это форум.</param>
+    /// <param name="text">Текст.</param>
+    /// <param name="replyToMessageId">Номер сообщения Telegram, на которое это ответ.</param>
+    /// <param name="cancellationToken">Отмена.</param>
+    Task<TelegramSendResult> SendMessageAsync(
+        long chatId,
+        int? threadId,
+        string text,
+        long? replyToMessageId,
+        CancellationToken cancellationToken);
 
     /// <summary>Отправляет фото одним сообщением: один снимок — как фото, несколько — альбомом.</summary>
     /// <param name="chatId">Чат.</param>
     /// <param name="threadId">Тема в чате, если это форум.</param>
     /// <param name="filePaths">Полные пути к файлам JPEG, от 1 до 10.</param>
-    /// <param name="caption">Подпись.</param>
+    /// <param name="caption">Подпись; пустая — без подписи.</param>
     /// <param name="cancellationToken">Отмена.</param>
     Task<TelegramSendResult> SendPhotosAsync(
         long chatId,
@@ -101,10 +111,18 @@ public sealed class TelegramClient : ITelegramClient, IDisposable
         _baseUrl = $"https://api.telegram.org/bot{settings.BotToken}/";
     }
 
-    public async Task<TelegramSendResult> SendMessageAsync(long chatId, int? threadId, string text, CancellationToken cancellationToken)
+    public async Task<TelegramSendResult> SendMessageAsync(
+        long chatId,
+        int? threadId,
+        string text,
+        long? replyToMessageId,
+        CancellationToken cancellationToken)
     {
+        // Если исходное сообщение удалили руками, ответ всё равно уходит — просто без цитаты.
+        var reply = replyToMessageId is { } id ? new ReplyParameters(id, AllowSendingWithoutReply: true) : null;
+
         using var content = JsonContent.Create(
-            new SendMessageRequest(chatId, threadId, text),
+            new SendMessageRequest(chatId, threadId, text, reply),
             TelegramJsonContext.Default.SendMessageRequest);
 
         return await PostAsync("sendMessage", content, TextTimeout, cancellationToken);
@@ -133,7 +151,11 @@ public sealed class TelegramClient : ITelegramClient, IDisposable
             if (filePaths.Count == 1)
             {
                 // Альбом из одного снимка Telegram не принимает.
-                form.Add(new StringContent(caption), "caption");
+                if (caption.Length > 0)
+                {
+                    form.Add(new StringContent(caption), "caption");
+                }
+
                 form.Add(FileContent(filePaths[0]), "photo", "photo.jpg");
                 return await PostAsync("sendPhoto", form, PhotosTimeout, cancellationToken);
             }
@@ -145,7 +167,7 @@ public sealed class TelegramClient : ITelegramClient, IDisposable
                 form.Add(FileContent(filePaths[index]), name, name + ".jpg");
 
                 // Подпись альбома — это подпись его первого снимка.
-                media[index] = new InputMediaPhoto("photo", "attach://" + name, index == 0 ? caption : null);
+                media[index] = new InputMediaPhoto("photo", "attach://" + name, index == 0 && caption.Length > 0 ? caption : null);
             }
 
             form.Add(new StringContent(JsonSerializer.Serialize(media, TelegramJsonContext.Default.InputMediaPhotoArray)), "media");
@@ -227,7 +249,9 @@ public sealed class TelegramClient : ITelegramClient, IDisposable
     }
 }
 
-internal sealed record SendMessageRequest(long ChatId, int? MessageThreadId, string Text);
+internal sealed record SendMessageRequest(long ChatId, int? MessageThreadId, string Text, ReplyParameters? ReplyParameters);
+
+internal sealed record ReplyParameters(long MessageId, bool AllowSendingWithoutReply);
 
 /// <param name="Type">Всегда «photo».</param>
 /// <param name="Media">Ссылка на часть формы с файлом: «attach://имя».</param>

@@ -64,7 +64,7 @@ public static class ShiftPostings
                 calculation.CashToSafe,
                 Leg.Increase(chart.Safe, chart.SafeShiftCash),
                 Leg.Increase(chart.Revenue, chart.RevenueShift),
-                "Наличка в сейф"));
+                "Пополнение сейфа (касса)"));
         }
         else if (calculation.CashToSafe < 0)
         {

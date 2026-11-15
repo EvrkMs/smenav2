@@ -26,7 +26,7 @@ public sealed class TransactionDraft
 
     public Leg Second { get; }
 
-    /// <summary>Подпись строки внутри операции, например «Наличка в сейф».</summary>
+    /// <summary>Подпись строки внутри операции, например «Пополнение сейфа (касса)».</summary>
     public string? Note { get; }
 
     /// <exception cref="LedgerRuleException">Транзакция нарушает правила учёта.</exception>

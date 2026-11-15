@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Smena.Core.Accounting;
 using Smena.Server.Accounting;
@@ -11,7 +10,7 @@ namespace Smena.Server.Root;
 /// Отмена операций и подтверждений. Только root. Отмена — флаг на всей операции:
 /// её транзакции перестают учитываться в балансах, но остаются в истории.
 /// </summary>
-public sealed class OperationCancelService(SmenaDbContext db, Ledger ledger, TimeProvider time)
+public sealed class OperationCancelService(SmenaDbContext db, Ledger ledger, NotificationService notifications, TimeProvider time)
 {
     public const int MaxReasonLength = Operation.CancelReasonLength;
 
@@ -66,9 +65,8 @@ public sealed class OperationCancelService(SmenaDbContext db, Ledger ledger, Tim
             return "По этой операции уже подтверждено зачисление в банк. Сначала отмените подтверждение.";
         }
 
-        var now = time.GetUtcNow();
-        await ledger.CancelAsync(operationId, actor.Name, reason.Trim(), now, cancellationToken);
-        await EnqueueCancelNoticeAsync(operation, reason.Trim(), actor, now, cancellationToken);
+        await ledger.CancelAsync(operationId, actor.Name, reason.Trim(), time.GetUtcNow(), cancellationToken);
+        await notifications.EnqueueCancelAsync(operationId, cancellationToken);
 
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -103,6 +101,7 @@ public sealed class OperationCancelService(SmenaDbContext db, Ledger ledger, Tim
                 .SingleAsync(cancellationToken);
 
             await ledger.CancelAsync(feeOperationId, actor.Name, "Отмена подтверждения зачисления", time.GetUtcNow(), cancellationToken);
+            await notifications.EnqueueCancelAsync(feeOperationId, cancellationToken);
         }
 
         receipt.Unconfirm();
@@ -122,31 +121,5 @@ public sealed class OperationCancelService(SmenaDbContext db, Ledger ledger, Tim
             select (Guid?)operation.Id).FirstOrDefaultAsync(cancellationToken);
 
         return lastActiveShiftOperation != operationId;
-    }
-
-    /// <summary>Администраторы видели исходное сообщение — должны увидеть и отмену.</summary>
-    private async Task EnqueueCancelNoticeAsync(
-        Operation operation,
-        string reason,
-        Actor actor,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        var settings = await db.ClubSettings.AsNoTracking().SingleAsync(cancellationToken);
-        if (settings.ReportsRoute is not { } route)
-        {
-            return;
-        }
-
-        var typeName = await db.Set<OperationTypeRow>()
-            .Where(row => row.Id == operation.Type)
-            .Select(row => row.Name)
-            .SingleAsync(cancellationToken);
-
-        var occurredAt = TimeZoneInfo.ConvertTime(operation.OccurredAt, settings.GetTimeZone())
-            .ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture);
-
-        var text = $"ОТМЕНЕНО: {typeName} от {occurredAt}\nПричина: {reason}\nОтменил: {actor.Name}";
-        db.OutboxMessages.Add(OutboxMessage.Create(route, text, operation.Id, now));
     }
 }

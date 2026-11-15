@@ -40,9 +40,12 @@ public sealed partial class OutboxDispatcher(
                 break;
             }
 
-            var result = message.PhotosShiftId is { } shiftId
-                ? await SendPhotosAsync(message, shiftId, cancellationToken)
-                : await telegram.SendMessageAsync(message.ChatId, message.ThreadId, message.Text, cancellationToken);
+            var result = message switch
+            {
+                { PhotosShiftId: { } shiftId } => await SendPhotosAsync(message, shiftId, cancellationToken),
+                { ReplyToSequence: { } original } => await SendReplyAsync(message, original, cancellationToken),
+                _ => await telegram.SendMessageAsync(message.ChatId, message.ThreadId, message.Text, null, cancellationToken),
+            };
 
             switch (result.Outcome)
             {
@@ -97,6 +100,24 @@ public sealed partial class OutboxDispatcher(
             paths.ConvertAll(storage.FullPath),
             message.Text,
             cancellationToken);
+    }
+
+    private async Task<TelegramSendResult> SendReplyAsync(OutboxMessage message, long originalSequence, CancellationToken cancellationToken)
+    {
+        // Исходное стоит в очереди раньше, а очередь не обгоняет ждущие сообщения:
+        // сюда доходим, только когда оно отправлено или отклонено.
+        var originalMessageId = await db.OutboxMessages
+            .AsNoTracking()
+            .Where(original => original.Sequence == originalSequence)
+            .Select(static original => original.TelegramMessageId)
+            .SingleAsync(cancellationToken);
+
+        if (originalMessageId is not { } replyTo)
+        {
+            return new TelegramSendResult(TelegramOutcome.Permanent, Error: "Исходное сообщение не дошло до Telegram — отвечать не на что.");
+        }
+
+        return await telegram.SendMessageAsync(message.ChatId, message.ThreadId, message.Text, replyTo, cancellationToken);
     }
 
     /// <summary>10 с, 20 с, 40 с… но не дольше 15 минут. Повторы не прекращаются: отчёт о смене должен дойти.</summary>

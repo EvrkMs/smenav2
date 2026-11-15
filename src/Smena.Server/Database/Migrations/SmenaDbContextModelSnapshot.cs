@@ -1235,6 +1235,10 @@ namespace Smena.Server.Database.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("photos_shift_id");
 
+                    b.Property<long?>("ReplyToSequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reply_to_sequence");
+
                     b.Property<DateTimeOffset?>("SentAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("sent_at");
@@ -1266,6 +1270,9 @@ namespace Smena.Server.Database.Migrations
                     b.HasIndex("PhotosShiftId")
                         .HasDatabaseName("ix_outbox_messages_photos_shift_id");
 
+                    b.HasIndex("ReplyToSequence")
+                        .HasDatabaseName("ix_outbox_messages_reply_to_sequence");
+
                     b.HasIndex("Sequence")
                         .HasDatabaseName("ix_outbox_messages_pending")
                         .HasFilter("status_id = 1");
@@ -1275,6 +1282,8 @@ namespace Smena.Server.Database.Migrations
 
                     b.ToTable("outbox_messages", null, t =>
                         {
+                            t.HasCheckConstraint("ck_outbox_messages_reply_is_text", "reply_to_sequence IS NULL OR photos_shift_id IS NULL");
+
                             t.HasCheckConstraint("ck_outbox_messages_sent", "(status_id = 2) = (sent_at IS NOT NULL)");
                         });
                 });
@@ -1813,6 +1822,12 @@ namespace Smena.Server.Database.Migrations
                         .HasForeignKey("PhotosShiftId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .HasConstraintName("fk_outbox_messages_shifts_photos_shift_id");
+
+                    b.HasOne("Smena.Server.Notifications.OutboxMessage", null)
+                        .WithMany()
+                        .HasForeignKey("ReplyToSequence")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_outbox_messages_outbox_messages_reply_to_sequence");
 
                     b.HasOne("Smena.Server.Notifications.OutboxStatusRow", null)
                         .WithMany()

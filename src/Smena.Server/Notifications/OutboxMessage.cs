@@ -38,6 +38,7 @@ public readonly record struct TelegramRoute(long ChatId, int? ThreadId);
 public sealed class OutboxMessage
 {
     public const int TextLength = 4096; // предел Telegram для одного сообщения
+    public const int CaptionLength = 1024; // предел Telegram для подписи к фото
     public const int ErrorLength = 500;
 
     private OutboxMessage()
@@ -68,6 +69,14 @@ public sealed class OutboxMessage
     /// </summary>
     public Guid? PhotosShiftId { get; private set; }
 
+    /// <summary>
+    /// Если задано, сообщение — ответ на это сообщение очереди (например, «Отмена»).
+    /// Номер сообщения в Telegram берётся у исходного в момент отправки: исходное
+    /// стоит в очереди раньше, поэтому к этому времени оно уже отправлено или отклонено.
+    /// Удаление исходного удаляет и ответ.
+    /// </summary>
+    public long? ReplyToSequence { get; private set; }
+
     public OutboxStatus Status { get; private set; }
 
     public int Attempts { get; private set; }
@@ -97,6 +106,14 @@ public sealed class OutboxMessage
     {
         var message = Create(route, caption, operationId, now);
         message.PhotosShiftId = shiftId;
+        return message;
+    }
+
+    /// <summary>Ответ на сообщение очереди: в тот же чат и ту же тему.</summary>
+    internal static OutboxMessage CreateReply(OutboxMessage original, string text, DateTimeOffset now)
+    {
+        var message = Create(new TelegramRoute(original.ChatId, original.ThreadId), text, original.OperationId, now);
+        message.ReplyToSequence = original.Sequence;
         return message;
     }
 
@@ -150,9 +167,16 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
     public void Configure(EntityTypeBuilder<OutboxMessage> builder)
     {
         builder.ToTable("outbox_messages", static table =>
+        {
             table.HasCheckConstraint(
                 "ck_outbox_messages_sent",
-                $"(status_id = {(short)OutboxStatus.Sent}) = (sent_at IS NOT NULL)"));
+                $"(status_id = {(short)OutboxStatus.Sent}) = (sent_at IS NOT NULL)");
+
+            // Ответ — всегда текст: альбом ответом не отправляется.
+            table.HasCheckConstraint(
+                "ck_outbox_messages_reply_is_text",
+                "reply_to_sequence IS NULL OR photos_shift_id IS NULL");
+        });
 
         builder.HasKey(static message => message.Sequence);
 
@@ -184,6 +208,11 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
         builder.HasOne<Shift>()
             .WithMany()
             .HasForeignKey(static message => message.PhotosShiftId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<OutboxMessage>()
+            .WithMany()
+            .HasForeignKey(static message => message.ReplyToSequence)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

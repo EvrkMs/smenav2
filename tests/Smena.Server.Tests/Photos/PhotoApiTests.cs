@@ -551,7 +551,7 @@ public sealed class PhotoApiTests(SmenaApp app) : IAsyncLifetime
     // ---- Telegram ----
 
     [Fact]
-    public async Task Photos_follow_the_report_as_one_album()
+    public async Task Report_goes_as_the_caption_of_the_album()
     {
         await ConfigureTelegramAsync();
         using var cashier = app.CreateCashierClient();
@@ -564,20 +564,52 @@ public sealed class PhotoApiTests(SmenaApp app) : IAsyncLifetime
         (await CloseShiftAsync(cashier, Shift(session.Id))).EnsureSuccessStatusCode();
         var sent = await DispatchAsync();
 
-        Assert.Equal(2, sent);
-        var report = Assert.Single(app.Telegram.Sent);
-        Assert.Contains("Фото: 3. ⚠ Сомнительных: 1", report.Text, StringComparison.Ordinal);
+        // Отчёт — подпись к альбому; отдельного текста в тему отчётов нет.
+        Assert.Equal(1, sent);
+        Assert.Empty(app.Telegram.Sent);
 
         var album = Assert.Single(app.Telegram.SentPhotos);
         Assert.Equal((AdminChat, ReportsThread), (album.ChatId, album.ThreadId));
-        Assert.StartsWith("Фото к смене ", album.Caption, StringComparison.Ordinal);
+        Assert.Contains("Выручка: ", album.Caption, StringComparison.Ordinal);
+        Assert.EndsWith("Фото: 3", album.Caption, StringComparison.Ordinal);    // давность снимков в отчёт не пишется
         Assert.Equal(3, album.FileSizes.Length);
         Assert.All(album.FileSizes, size => Assert.True(size > 0));
+    }
 
-        // Альбом идёт после текста отчёта.
+    [Fact]
+    public async Task Report_too_long_for_a_caption_follows_the_album()
+    {
+        await ConfigureTelegramAsync();
+        using var cashier = app.CreateCashierClient();
+        var session = await CreateSessionAsync(cashier);
+        await UploadManyAsync(cashier, session, 3);
+
+        // Три сотрудника с именами по 100 символов и причина на 500 символов
+        // раздувают отчёт сверх 1024 символов подписи.
+        var employees = await app.QueryDatabaseAsync(async db =>
+        {
+            var created = Enumerable.Range(0, 3)
+                .Select(index => Employee.Create(2001 + index, new string((char)('а' + index), Employee.NameLength), 200))
+                .ToList();
+            db.Employees.AddRange(created);
+            await db.SaveChangesAsync(Ct);
+            return created.ConvertAll(static employee => employee.Id);
+        });
+        var reason = new string('я', ShiftCalculator.MaxReasonLength);
+        var input = Shift(session.Id) with
+        {
+            ShortageReason = reason,
+            Employees = [.. employees.Select(static id => new ShiftEmployeeInput(id, 4, 0))],
+        };
+        (await CloseShiftAsync(cashier, input)).EnsureSuccessStatusCode();
+        await DispatchAsync();
+
+        Assert.Equal(string.Empty, Assert.Single(app.Telegram.SentPhotos).Caption);
+        Assert.Contains(reason, Assert.Single(app.Telegram.Sent).Text, StringComparison.Ordinal);
+
+        // Альбом стоит в очереди перед текстом.
         var queue = await app.QueryDatabaseAsync(db => db.OutboxMessages.AsNoTracking().OrderBy(m => m.Sequence).ToListAsync(Ct));
-        Assert.Equal([false, true], queue.Select(m => m.PhotosShiftId is not null));
-        Assert.All(queue, message => Assert.Equal(OutboxStatus.Sent, message.Status));
+        Assert.Equal([true, false], queue.Select(m => m.PhotosShiftId is not null));
     }
 
     [Fact]
@@ -710,10 +742,9 @@ public sealed class PhotoApiTests(SmenaApp app) : IAsyncLifetime
         (await CloseShiftAsync(cashier, Shift(session.Id))).EnsureSuccessStatusCode();
         await DispatchAsync();
 
-        var report = Assert.Single(app.Telegram.Sent).Text;
-        Assert.Contains("Фото: 3 (с кассы: 2)", report, StringComparison.Ordinal);
-        Assert.DoesNotContain("Сомнительных", report, StringComparison.Ordinal);
-        Assert.Equal(3, Assert.Single(app.Telegram.SentPhotos).FileSizes.Length);
+        var album = Assert.Single(app.Telegram.SentPhotos);
+        Assert.EndsWith("Фото: 3 (с кассы: 2)", album.Caption, StringComparison.Ordinal);
+        Assert.Equal(3, album.FileSizes.Length);
 
         // В панели вставленные снимки отличимы от снятых телефоном.
         var operationId = await app.QueryDatabaseAsync(db => db.Shifts.Select(s => s.OperationId).SingleAsync(Ct));

@@ -37,24 +37,32 @@ public sealed class NotificationService(SmenaDbContext db, Ledger ledger, TimePr
 
         if (settings.ReportsRoute is { } reports)
         {
-            var closedAtLocal = TimeZoneInfo.ConvertTime(operation.OccurredAt, settings.GetTimeZone());
-
-            var stale = 0;
             var pasted = 0;
             foreach (var photo in photos)
             {
-                stale += photo.IsStale ? 1 : 0;
                 pasted += photo.PastedAtCashier ? 1 : 0;
             }
 
-            Add(reports, NotificationTexts.ShiftReport(input, calculation, closedAtLocal, photos.Count, stale, pasted), operation);
+            var report = NotificationTexts.ShiftReport(input, calculation, LocalTime(operation, settings), photos.Count, pasted);
 
-            // Альбом идёт следом за текстом отчёта. В сообщении только ссылка на смену:
-            // какие файлы слать, отправитель узнаёт из базы в момент отправки.
-            if (photos.Count > 0)
+            if (photos.Count == 0)
             {
+                Add(reports, report, operation);
+            }
+            else
+            {
+                // Фото идут первыми, отчёт — подписью к ним. Подпись в Telegram короче
+                // сообщения: длинный отчёт уходит отдельным сообщением сразу за альбомом.
+                // В сообщении-альбоме только ссылка на смену: какие файлы слать,
+                // отправитель узнаёт из базы в момент отправки.
+                var fitsCaption = report.Length <= OutboxMessage.CaptionLength;
                 db.OutboxMessages.Add(OutboxMessage.CreatePhotos(
-                    reports, NotificationTexts.ShiftPhotosCaption(closedAtLocal), operation.Id, shiftId, time.GetUtcNow()));
+                    reports, fitsCaption ? report : string.Empty, operation.Id, shiftId, time.GetUtcNow()));
+
+                if (!fitsCaption)
+                {
+                    Add(reports, report, operation);
+                }
             }
         }
 
@@ -76,7 +84,8 @@ public sealed class NotificationService(SmenaDbContext db, Ledger ledger, TimePr
         {
             Add(
                 expenses,
-                NotificationTexts.Expense(expense.Amount, expense.Note ?? string.Empty, operation.Comment, operation.ActorName),
+                NotificationTexts.Expense(
+                    expense.Amount, expense.Note ?? string.Empty, operation.Comment, operation.ActorName, LocalTime(operation, settings)),
                 operation);
         }
 
@@ -114,12 +123,42 @@ public sealed class NotificationService(SmenaDbContext db, Ledger ledger, TimePr
         if (safeLines is not null && settings.SafeRoute is { } safeRoute)
         {
             var balance = await ledger.GetBalanceAsync(SystemAccounts.Safe, cancellationToken);
-            Add(safeRoute, NotificationTexts.SafeMovements(safeLines, balance), operation);
+            Add(safeRoute, NotificationTexts.SafeMovements(safeLines, balance, LocalTime(operation, settings)), operation);
         }
 
         if (byEmployeeAccount is not null && settings.TelegramSalaryChatId is { } salaryChatId)
         {
-            await EnqueueEmployeeMovementsAsync(operation, byEmployeeAccount, salaryChatId, cancellationToken);
+            await EnqueueEmployeeMovementsAsync(
+                operation, byEmployeeAccount, salaryChatId, LocalTime(operation, settings), cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Отмена операции: на каждое её сообщение в Telegram — ответ «Отмена» в той же теме.
+    /// Ответ ставится и на ещё не отправленные сообщения: очередь идёт по порядку,
+    /// поэтому к отправке ответа исходное уже получит номер в Telegram.
+    /// </summary>
+    public async Task EnqueueCancelAsync(Guid operationId, CancellationToken cancellationToken)
+    {
+        var originals = await db.OutboxMessages
+            .AsNoTracking()
+            .Where(message => message.OperationId == operationId
+                              && message.ReplyToSequence == null
+                              && message.Status != OutboxStatus.Failed)
+            .OrderBy(static message => message.Sequence)
+            .ToListAsync(cancellationToken);
+
+        var now = time.GetUtcNow();
+        foreach (var original in originals)
+        {
+            // Альбом без подписи всегда идёт вместе с отдельным текстом отчёта:
+            // хватит одного ответа — на текст.
+            if (original.PhotosShiftId is not null && original.Text.Length == 0)
+            {
+                continue;
+            }
+
+            db.OutboxMessages.Add(OutboxMessage.CreateReply(original, NotificationTexts.Cancelled, now));
         }
     }
 
@@ -127,6 +166,7 @@ public sealed class NotificationService(SmenaDbContext db, Ledger ledger, TimePr
         Operation operation,
         Dictionary<int, List<(int Signed, int? CategoryId, string? Note)>> byEmployeeAccount,
         long salaryChatId,
+        DateTimeOffset occurredAtLocal,
         CancellationToken cancellationToken)
     {
         var accountIds = byEmployeeAccount.Keys.ToArray();
@@ -169,9 +209,12 @@ public sealed class NotificationService(SmenaDbContext db, Ledger ledger, TimePr
             }
 
             var balance = await ledger.GetBalanceAsync(new AccountRef(thread.AccountId, AccountKind.Employee), cancellationToken);
-            Add(new TelegramRoute(salaryChatId, thread.ThreadId), NotificationTexts.EmployeeMovements(lines, balance), operation);
+            Add(new TelegramRoute(salaryChatId, thread.ThreadId), NotificationTexts.EmployeeMovements(lines, balance, occurredAtLocal), operation);
         }
     }
+
+    private static DateTimeOffset LocalTime(Operation operation, ClubSettings settings) =>
+        TimeZoneInfo.ConvertTime(operation.OccurredAt, settings.GetTimeZone());
 
     private void Add(TelegramRoute route, string text, Operation operation) =>
         db.OutboxMessages.Add(OutboxMessage.Create(route, text, operation.Id, time.GetUtcNow()));
