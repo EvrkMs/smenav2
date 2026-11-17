@@ -7,6 +7,8 @@ obj/
 node_modules/
 dist/
 deploy/.env
+# локальный конфиг развёртывания: в репозиторий не попадает
+deploy/docker-compose.prod.yml
 # сборки интерфейсов (web/* → wwwroot); страница загрузки фото wwwroot/upload — исходник, она в репозитории
 src/Smena.Server/wwwroot/cashier/
 src/Smena.Server/wwwroot/panel/

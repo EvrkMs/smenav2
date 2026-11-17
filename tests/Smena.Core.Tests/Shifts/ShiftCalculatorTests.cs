@@ -184,6 +184,17 @@ public sealed class ShiftCalculatorTests
         Assert.Equal(300, result.SafeSurplus);
     }
 
+    [Fact]
+    public void Long_reason_is_ignored_when_there_is_no_shortage()
+    {
+        var input = CleanShift() with { ShortageReason = new string('x', 501) };
+
+        var result = Calculate(input);
+
+        Assert.True(result.CanClose);
+        Assert.Empty(result.Problems);
+    }
+
     [Theory]
     [InlineData(0)]      // не ввели вообще
     [InlineData(499)]    // недобрали

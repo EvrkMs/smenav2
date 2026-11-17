@@ -71,7 +71,9 @@ public sealed class Shift
             CashFloat = calculation.CashFloat,
             CashDiscrepancy = calculation.CashDiscrepancy,
             SafeDiscrepancy = calculation.SafeDiscrepancy,
-            ShortageReason = string.IsNullOrWhiteSpace(input.ShortageReason) ? null : input.ShortageReason.Trim(),
+            ShortageReason = calculation.RequiredMinus > 0 && !string.IsNullOrWhiteSpace(input.ShortageReason)
+                ? input.ShortageReason.Trim()
+                : null,
         };
 
         var lines = calculation.Lines;

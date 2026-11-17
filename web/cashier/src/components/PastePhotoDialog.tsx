@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError, pastePhoto, removePhoto } from '../api/client';
+import { QRCodeSVG } from 'qrcode.react';
+import { ApiError, pastePhoto, removePhoto, type PhotoSession } from '../api/client';
 import { Button } from './ui/primitives';
 import './ui/confirm.css';
 import './photoPanel.css';
@@ -13,6 +14,11 @@ interface Pasted {
 
 interface Props {
   sessionId: string;
+  /**
+   * Открыто из «Закрыть смену»: показываем QR рядом со вставкой, чтобы
+   * администратор мог сразу снять чек терминала телефоном.
+   */
+  session?: PhotoSession | null;
   /** Сколько фото уже в сессии (с телефона и с кассы) и сколько нужно. */
   count: number;
   minPhotos: number;
@@ -39,7 +45,7 @@ function imagesFrom(data: DataTransfer | null): File[] {
  * кассе, поэтому снимать монитор телефоном незачем — достаточно вставить его
  * из буфера обмена. Каждый вставленный снимок сразу уходит на сервер.
  */
-export default function PastePhotoDialog({ sessionId, count, minPhotos, onChanged, onClose }: Props) {
+export default function PastePhotoDialog({ sessionId, session = null, count, minPhotos, onChanged, onClose }: Props) {
   const [pasted, setPasted] = useState<Pasted[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +103,9 @@ export default function PastePhotoDialog({ sessionId, count, minPhotos, onChange
     setError(null);
     try {
       await removePhoto(sessionId, item.id);
+      const index = previews.current.indexOf(item.preview);
+      if (index >= 0) previews.current.splice(index, 1);
+      URL.revokeObjectURL(item.preview);
       setPasted((prev) => prev.filter((p) => p.id !== item.id));
       onChanged();
     } catch (e) {
@@ -110,7 +119,7 @@ export default function PastePhotoDialog({ sessionId, count, minPhotos, onChange
       <div
         className="confirm-slip paste-dialog"
         role="dialog"
-        aria-label="Вставить фото"
+        aria-label={session ? 'Фото к смене' : 'Вставить фото'}
         onClick={(e) => e.stopPropagation()}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
@@ -119,7 +128,20 @@ export default function PastePhotoDialog({ sessionId, count, minPhotos, onChange
         }}
       >
         <div className="confirm-slip-perforation" aria-hidden="true" />
-        <h4>Вставить фото</h4>
+        <h4>{session ? 'Фото к смене' : 'Вставить фото'}</h4>
+
+        {session && (
+          <div className="photo-qr paste-qr">
+            {/* Белое поле вокруг QR обязательно: камера телефона не распознаёт код на тёмной теме. */}
+            <QRCodeSVG value={session.uploadUrl} size={148} marginSize={3} bgColor="#ffffff" fgColor="#000000" />
+            <div className="photo-status">
+              <p className={`photo-count tabular ${count >= minPhotos ? 'value-positive' : ''}`}>
+                {count} из {minPhotos}
+              </p>
+              <p className="muted">Снимите чек терминала телефоном: наведите камеру на код. Снимки экрана вставьте ниже.</p>
+            </div>
+          </div>
+        )}
 
         <div className={`paste-zone ${busy ? 'busy' : ''}`}>
           <strong>{busy ? 'Загружаю…' : 'Нажмите Ctrl+V'}</strong>

@@ -61,15 +61,20 @@ public static class ShiftCalculator
                 $"Сумма минусов должна быть равна {requiredMinus}, введено {totals.Minus}."));
         }
 
-        if (requiredMinus > 0 && string.IsNullOrWhiteSpace(input.ShortageReason))
+        // Без недостачи причина не нужна вовсе: поле скрыто, и старый длинный
+        // текст из формы не должен блокировать закрытие смены.
+        if (requiredMinus > 0)
         {
-            problems.Add(new ShiftProblem(ShiftProblemCode.ShortageReasonRequired, "Укажите причину недостачи."));
-        }
-        else if (input.ShortageReason is { Length: > MaxReasonLength })
-        {
-            problems.Add(new ShiftProblem(
-                ShiftProblemCode.ShortageReasonRequired,
-                $"Причина недостачи длиннее {MaxReasonLength} символов."));
+            if (string.IsNullOrWhiteSpace(input.ShortageReason))
+            {
+                problems.Add(new ShiftProblem(ShiftProblemCode.ShortageReasonRequired, "Укажите причину недостачи."));
+            }
+            else if (input.ShortageReason.Length > MaxReasonLength)
+            {
+                problems.Add(new ShiftProblem(
+                    ShiftProblemCode.ShortageReasonRequired,
+                    $"Причина недостачи длиннее {MaxReasonLength} символов."));
+            }
         }
 
         // Что на снимках, система не проверяет — только количество.

@@ -18,6 +18,7 @@
 /* ---- Окно «Вставить фото» ---- */
 
 .paste-dialog { width: min(520px, calc(100vw - 32px)); }
+.paste-qr { margin-bottom: 16px; }
 .paste-zone {
   display: flex;
   flex-direction: column;

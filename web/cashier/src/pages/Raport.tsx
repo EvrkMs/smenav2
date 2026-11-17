@@ -83,6 +83,18 @@ export default function Raport() {
 
   const [requestKey, renewRequestKey] = useRequestKey(input);
 
+  // В закрытие не отдаём причину, если недостачи нет: поле скрыто, и сервер
+  // не должен её учитывать. Для предпросчёта исходный ввод остаётся прежним —
+  // это не зацикливает пересчёт и не теряет текст, если недостача появится снова.
+  const closeInput = useMemo<ShiftInput>(
+    () => ({ ...input, shortageReason: calculation?.requiredMinus === 0 ? null : input.shortageReason }),
+    [input, calculation],
+  );
+
+  // Нехватка фото — единственная проблема, которую администратор решает прямо
+  // из кнопки закрытия: нажатие открывает окно с QR и вставкой.
+  const photoMissing = calculation?.problems.some((p) => p.code === 'NotEnoughPhotos') ?? false;
+
   // Предпросмотр считает сервер — теми же формулами, что и закрытие. Ответы
   // могут прийти не по порядку (быстрый ввод), поэтому берём только последний.
   // Баланс сейфа в зависимостях: изменился сейф — изменилось и расхождение.
@@ -111,12 +123,28 @@ export default function Raport() {
 
   // Окно вставки открывается на конкретную сессию: если её ещё нет, сначала создаём.
   const [pasteSessionId, setPasteSessionId] = useState<string | null>(null);
-  const handlePhotoPaste = async () => {
+  // true — окно открыто самим закрытием смены: в нём есть и QR, и вставка.
+  const [photoGateOpen, setPhotoGateOpen] = useState(false);
+
+  const closePhotoDialog = () => {
+    setPasteSessionId(null);
+    setPhotoGateOpen(false);
+  };
+
+  const openPhotoDialog = async (fromClose: boolean) => {
     setPhotoBusy(true);
     const id = await call(photos.ensure());
     setPhotoBusy(false);
-    if (id) setPasteSessionId(id);
+    if (!id) return;
+    setPasteSessionId(id);
+    if (fromClose) {
+      setPhotoGateOpen(true);
+      // Сессия могла быть загружена из localStorage, но ещё не считана с сервера.
+      void photos.reload();
+    }
   };
+
+  const handlePhotoPaste = () => openPhotoDialog(false);
 
   const handlePhotoCancel = async () => {
     if (photoCount > 0) {
@@ -176,7 +204,14 @@ export default function Raport() {
 
   const handleSend = async () => {
     if (!calculation) return toast('error', 'Нет связи с сервером — расчёт смены недоступен.');
-    if (!calculation.canClose) return toast('error', calculation.problems[0]?.message ?? 'Смену нельзя закрыть.');
+    if (!calculation.canClose) {
+      // Не хватает фото — сразу открываем окно: там и вставка с кассы, и QR для телефона.
+      if (calculation.problems.some((p) => p.code === 'NotEnoughPhotos')) {
+        await openPhotoDialog(true);
+        return;
+      }
+      return toast('error', calculation.problems[0]?.message ?? 'Смену нельзя закрыть.');
+    }
 
     // Пустое поле и введённый 0 для расчётов неотличимы, поэтому забытое поле
     // молча ушло бы на сервер нулём. Не блокируем (бывают смены, где 0 — правда),
@@ -218,7 +253,7 @@ export default function Raport() {
     if (!ok) return;
 
     setBusy(true);
-    const result = await call(closeShift(input, requestKey));
+    const result = await call(closeShift(closeInput, requestKey));
     setBusy(false);
     if (!result) return;
 
@@ -275,10 +310,11 @@ export default function Raport() {
         {pasteSessionId !== null && pasteSessionId === photos.sessionId && (
           <PastePhotoDialog
             sessionId={pasteSessionId}
+            session={photoGateOpen ? photos.session : null}
             count={photoCount}
             minPhotos={photos.session?.minPhotos ?? config.minPhotos}
             onChanged={() => void photos.reload()}
-            onClose={() => setPasteSessionId(null)}
+            onClose={closePhotoDialog}
           />
         )}
       </div>
@@ -306,7 +342,7 @@ export default function Raport() {
         <NumberField label="Факт в сейфе, ₽" value={factSafe} maxDigits={MAX_AMOUNT_DIGITS} onValueChange={setFactSafe} />
 
         {calculation && calculation.requiredMinus > 0 && (
-          <TextField label="Причина недостачи" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <TextField label="Причина недостачи" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} />
         )}
       </Panel>
 
@@ -378,8 +414,8 @@ export default function Raport() {
           <p className="muted">Расчёт недоступен: нет связи с сервером.</p>
         )}
 
-        <Button disabled={busy || !calculation?.canClose} onClick={handleSend}>
-          {busy ? 'Закрываю…' : 'Закрыть смену'}
+        <Button disabled={busy || !calculation || (!calculation.canClose && !photoMissing)} onClick={handleSend}>
+          {busy ? 'Закрываю…' : photoMissing && !calculation?.canClose ? 'Добавить фото' : 'Закрыть смену'}
         </Button>
       </Panel>
     </div>

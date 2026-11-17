@@ -14,7 +14,10 @@ public sealed record SafeResponse(int Balance);
 
 public sealed record ShiftEmployeeResponse(Guid EmployeeId, string Name, int Hours, int HourlyRate, int Accrued, int Minus, int Payable);
 
-public sealed record ShiftProblemResponse(ShiftProblemCode Code, string Message, Guid? EmployeeId);
+public sealed record ShiftProblemResponse(
+    [property: JsonConverter(typeof(JsonStringEnumConverter<ShiftProblemCode>))] ShiftProblemCode Code,
+    string Message,
+    Guid? EmployeeId);
 
 public sealed record ShiftCalculationResponse
 {

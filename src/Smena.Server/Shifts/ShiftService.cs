@@ -95,7 +95,7 @@ public sealed class ShiftService(
             now,
             actor,
             ShiftPostings.Build(calculation, Chart),
-            comment: input.ShortageReason?.Trim() ?? string.Empty,
+            comment: calculation.RequiredMinus > 0 ? input.ShortageReason?.Trim() ?? string.Empty : string.Empty,
             idempotencyKey: idempotencyKey));
 
         var shift = Shift.Create(operation.Id, now, input, calculation);
